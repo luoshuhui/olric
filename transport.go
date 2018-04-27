@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
@@ -219,7 +220,7 @@ func (h *httpTransport) handleUpdateRouting(w http.ResponseWriter, r *http.Reque
 		bpart.owners = data.Backups
 		bpart.Unlock()
 	}
-
+	atomic.AddUint64(&h.db.routingVersion, 1)
 	// Bootstrapped by the coordinator.
 	h.db.bcancel()
 	h.db.wg.Add(1)

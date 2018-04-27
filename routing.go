@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/memberlist"
@@ -224,6 +225,7 @@ func (db *OlricDB) distributePartitions() routing {
 			db.distributeBackups(partID, rt, backupCount)
 		}
 	}
+	atomic.AddUint64(&db.routingVersion, 1)
 	return rt
 }
 

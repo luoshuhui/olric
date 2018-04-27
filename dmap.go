@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"path"
 	"reflect"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -80,11 +81,7 @@ func (db *OlricDB) purgeOldVersions(hkey uint64, name string) {
 	}
 }
 
-func (db *OlricDB) putKeyVal(hkey uint64, name string, value interface{}, timeout time.Duration) error {
-	dmp := db.getDMap(name, hkey)
-	dmp.Lock()
-	defer dmp.Unlock()
-
+func (db *OlricDB) setValueWithVersionVector(dm *dmap, hkey uint64, value interface{}, timeout time.Duration) {
 	var ttl int64
 	if timeout != nilTimeout {
 		ttl = getTTL(timeout)
@@ -92,7 +89,19 @@ func (db *OlricDB) putKeyVal(hkey uint64, name string, value interface{}, timeou
 	val := vdata{
 		Value: value,
 		TTL:   ttl,
+		RVer:  atomic.LoadUint64(&db.routingVersion),
 	}
+	cval, ok := dm.d[hkey]
+	if ok {
+		val.KVer = atomic.AddUint64(&cval.KVer, 1)
+	}
+	dm.d[hkey] = val
+}
+
+func (db *OlricDB) putKeyVal(hkey uint64, name string, value interface{}, timeout time.Duration) error {
+	dm := db.getDMap(name, hkey)
+	dm.Lock()
+	defer dm.Unlock()
 
 	if db.config.BackupCount != 0 {
 		if db.config.BackupMode == AsyncBackupMode {
@@ -111,7 +120,7 @@ func (db *OlricDB) putKeyVal(hkey uint64, name string, value interface{}, timeou
 			}
 		}
 	}
-	dmp.d[hkey] = val
+	db.setValueWithVersionVector(dm, hkey, value, timeout)
 	db.purgeOldVersions(hkey, name)
 	return nil
 }

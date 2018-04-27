@@ -32,20 +32,21 @@ import (
 
 // OlricDB represens an member in the cluster. All functions on the OlricDB structure are safe to call concurrently.
 type OlricDB struct {
-	this       host
-	config     *Config
-	logger     *log.Logger
-	hasher     Hasher
-	discovery  *discovery
-	consistent *consistent.Consistent
-	partitions map[uint64]*partition
-	backups    map[uint64]*partition
-	transport  *httpTransport
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	fsckMtx    sync.Mutex
-	routingMtx sync.Mutex
+	this           host
+	config         *Config
+	logger         *log.Logger
+	hasher         Hasher
+	discovery      *discovery
+	consistent     *consistent.Consistent
+	partitions     map[uint64]*partition
+	backups        map[uint64]*partition
+	transport      *httpTransport
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	fsckMtx        sync.Mutex
+	routingMtx     sync.Mutex
+	routingVersion uint64
 
 	// To control non-bootstrapped OlricDB instance
 	bctx    context.Context
@@ -55,6 +56,8 @@ type OlricDB struct {
 type vdata struct {
 	Value interface{}
 	TTL   int64
+	RVer  uint64
+	KVer  uint64
 }
 
 type dmap struct {

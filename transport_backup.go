@@ -87,18 +87,10 @@ func (h *httpTransport) handlePutBackup(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	dmp := h.db.getBackupDmap(name, hkey)
-	dmp.Lock()
-	defer dmp.Unlock()
-
-	var ttl int64
-	if timeout != nilTimeout {
-		ttl = getTTL(timeout)
-	}
-	dmp.d[hkey] = vdata{
-		Value: value,
-		TTL:   ttl,
-	}
+	dm := h.db.getBackupDmap(name, hkey)
+	dm.Lock()
+	defer dm.Unlock()
+	h.db.setValueWithVersionVector(dm, hkey, value, timeout)
 }
 
 func (h *httpTransport) handleDeleteBackup(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
