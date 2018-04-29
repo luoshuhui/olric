@@ -66,6 +66,9 @@ type dmap struct {
 	locker *locker
 	// user's key/value pairs
 	d map[uint64]vdata
+
+	// kqueue means key-queue which's used by anti-entropy system.
+	kqueue []uint64
 }
 
 type partition struct {
@@ -214,6 +217,11 @@ func (db *OlricDB) Start() error {
 	db.wg.Add(2)
 	go db.updateRoutingPeriodically()
 	go db.evictKeysAtBackground()
+
+	if db.config.BackupCount > 0 {
+		db.wg.Add(1)
+		go db.verifyDMapsAtBackground()
+	}
 	return <-errCh
 }
 

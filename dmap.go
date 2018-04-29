@@ -122,6 +122,7 @@ func (db *OlricDB) putKeyVal(hkey uint64, name string, value interface{}, timeou
 	}
 	db.setValueWithVersionVector(dm, hkey, value, timeout)
 	db.purgeOldVersions(hkey, name)
+	dm.kqueue = append(dm.kqueue, hkey)
 	return nil
 }
 
