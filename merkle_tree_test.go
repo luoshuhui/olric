@@ -16,6 +16,7 @@ package olricdb
 
 import (
 	"encoding/binary"
+	"fmt"
 	"testing"
 )
 
@@ -33,4 +34,20 @@ func Test_MerkleTreeInsert(t *testing.T) {
 		i++
 		m.insert(v)
 	}
+
+	/*m2 := newMerkleTree(nil)
+	i = uint64(0)
+	b = make([]byte, 8)
+	for i < 10 {
+		binary.LittleEndian.PutUint64(b, i)
+		v := &versionVector{
+			HKey: m.hasher.Sum64(b),
+			RVer: 1 + i,
+			KVer: 343 + i,
+		}
+		i++
+		m2.insert(v)
+	}*/
+
+	fmt.Println(Compare(m.parent, m.parent))
 }

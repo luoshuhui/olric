@@ -16,13 +16,14 @@ package olricdb
 
 import (
 	"encoding/binary"
+	"fmt"
 )
 
 type versionVector struct {
 	HKey, RVer, KVer uint64
 }
 
-func (m *merkleTree) vectorCmp(v1, v2 *versionVector) bool {
+func vectorCmp(v1, v2 *versionVector) bool {
 	return v1.HKey == v2.HKey && v1.KVer == v2.KVer && v1.RVer == v2.RVer
 }
 
@@ -43,10 +44,10 @@ func (m *merkleTree) recalcParentHash(phash, hver uint64) uint64 {
 }
 
 type mnode struct {
-	hash  uint64
-	hkey  uint64
-	left  *mnode
-	right *mnode
+	hash   uint64
+	vector *versionVector
+	left   *mnode
+	right  *mnode
 }
 
 type merkleTree struct {
@@ -69,7 +70,7 @@ func newMerkleTree(hasher Hasher) *merkleTree {
 
 func (m *merkleTree) insertRecursive(n *mnode, v *versionVector, hver uint64) uint64 {
 	var next *mnode
-	if n.hkey < v.HKey {
+	if n.vector.HKey < v.HKey {
 		if n.left != nil {
 			next = n.left
 		}
@@ -85,10 +86,10 @@ func (m *merkleTree) insertRecursive(n *mnode, v *versionVector, hver uint64) ui
 	}
 
 	leaf := &mnode{
-		hash: hver,
-		hkey: v.HKey,
+		hash:   hver,
+		vector: v,
 	}
-	if n.hkey < v.HKey {
+	if n.vector.HKey < v.HKey {
 		n.left = leaf
 	} else {
 		n.right = leaf
@@ -101,8 +102,8 @@ func (m *merkleTree) insert(v *versionVector) {
 	hver := m.hash(v)
 	if m.parent == nil {
 		m.parent = &mnode{
-			hash: hver,
-			hkey: v.HKey,
+			hash:   hver,
+			vector: v,
 		}
 		return
 	}
@@ -111,3 +112,59 @@ func (m *merkleTree) insert(v *versionVector) {
 		m.insertRecursive(m.parent, v, hver),
 	)
 }
+
+func (m *merkleTree) diff(t *merkleTree) []uint64 {
+	return nil
+}
+
+// Walk traverses a tree depth-first,
+// sending each Value on a channel.
+func Walk(t *mnode, ch chan *mnode) {
+	if t == nil {
+		return
+	}
+	Walk(t.left, ch)
+	ch <- t
+	Walk(t.right, ch)
+}
+
+// Walker launches Walk in a new goroutine,
+// and returns a read-only channel of values.
+func Walker(t *mnode) <-chan *mnode {
+	ch := make(chan *mnode)
+	go func() {
+		Walk(t, ch)
+		close(ch)
+	}()
+	return ch
+}
+
+// Compare reads values from two Walkers
+// that run simultaneously, and returns true
+// if t1 and t2 have the same contents.
+func Compare(t1, t2 *mnode) bool {
+	c1, c2 := Walker(t1), Walker(t2)
+	for {
+		v1, ok1 := <-c1
+		v2, ok2 := <-c2
+		if !ok1 || !ok2 {
+			return ok1 == ok2
+		}
+		if v1.hash == v2.hash {
+			fmt.Println("hash'ler ayni. kontrole gerek yok")
+			return true
+		}
+		if !vectorCmp(v1.vector, v2.vector) {
+			break
+		}
+	}
+	return false
+}
+
+// 1- Primary-owner sends a versionVector list o build a merkle tree.
+// 2- Backup node scans its copy for incoming hkeys and build its own merkle tree
+// 3- Backup node builds a second merkle tree for incoming versionVector list.
+// 4- Compares the merkle trees to find differences:
+//	* Backup's tree may has out-dated items
+//	* Backup's tree may has missing items
+//	* Backup's tree may has
