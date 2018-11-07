@@ -16,6 +16,7 @@ package offheap
 
 import (
 	"encoding/binary"
+	"fmt"
 	"syscall"
 
 	"github.com/pkg/errors"
@@ -77,6 +78,12 @@ func (t *table) malloc(size int) error {
 	return nil
 }
 
+const (
+	keyLen   int = 1
+	ttlLen   int = 8
+	valueLen int = 4
+)
+
 // In-memory layout for entry:
 //
 // KEY-LENGTH(uint8) | KEY(bytes) | TTL(uint64) | VALUE-LENGTH(uint32) | VALUE(bytes)
@@ -85,8 +92,16 @@ func (t *table) put(hkey uint64, value *VData) error {
 		return ErrKeyTooLarge
 	}
 
+	inuse := wordCount + valueLen + len(value.Value)
+	if value.TTL != 0 {
+		inuse += ttlLen
+	}
+	if len(value.Key) != 0 {
+		inuse += len(value.Key)
+		inuse += keyLen
+	}
+
 	// Check empty space on allocated memory area.
-	inuse := len(value.Key) + len(value.Value) + 13
 	if inuse+t.offset >= t.allocated {
 		return errNotEnoughSpace
 	}
@@ -96,21 +111,35 @@ func (t *table) put(hkey uint64, value *VData) error {
 		t.delete(hkey)
 	}
 
+	if value.TTL != 0 {
+		t.bset(hasTTL)
+	}
+	if len(value.Key) != 0 {
+		t.bset(hasKey)
+	}
+
 	t.keys[hkey] = t.offset
 	t.inuse += inuse
 
-	// Set key length. It's 1 byte.
-	klen := uint8(len(value.Key))
-	copy(t.memory[t.offset:], []byte{klen})
-	t.offset++
+	// For bitset
+	t.offset += wordCount
 
-	// Set the key.
-	copy(t.memory[t.offset:], value.Key)
-	t.offset += len(value.Key)
+	if len(value.Key) != 0 {
+		// Set key length. It's 1 byte.
+		klen := uint8(len(value.Key))
+		copy(t.memory[t.offset:], []byte{klen})
+		t.offset++
 
-	// Set the TTL. It's 8 bytes.
-	binary.BigEndian.PutUint64(t.memory[t.offset:], uint64(value.TTL))
-	t.offset += 8
+		// Set the key.
+		copy(t.memory[t.offset:], value.Key)
+		t.offset += len(value.Key)
+	}
+
+	if value.TTL != 0 {
+		// Set the TTL. It's 8 bytes.
+		binary.BigEndian.PutUint64(t.memory[t.offset:], uint64(value.TTL))
+		t.offset += 8
+	}
 
 	// Set the value length. It's 4 bytes.
 	binary.BigEndian.PutUint32(t.memory[t.offset:], uint32(len(value.Value)))
@@ -119,6 +148,8 @@ func (t *table) put(hkey uint64, value *VData) error {
 	// Set the value.
 	copy(t.memory[t.offset:], value.Value)
 	t.offset += len(value.Value)
+	of := t.keys[hkey]
+	fmt.Println(t.memory[of : of+inuse])
 	return nil
 }
 

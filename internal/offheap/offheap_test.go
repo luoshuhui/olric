@@ -43,10 +43,11 @@ func Test_Put(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		vdata := &VData{
-			Key:   bkey(i),
-			TTL:   int64(i),
+			//Key: bkey(i),
+			//TTL:   int64(i),
 			Value: bval(i),
 		}
+		//fmt.Println([]byte(vdata.Key))
 		hkey := xxhash.Sum64([]byte(vdata.Key))
 		err := o.Put(hkey, vdata)
 		if err != nil {
