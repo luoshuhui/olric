@@ -87,6 +87,8 @@ func (db *Olric) putKeyVal(hkey uint64, name, key string, value []byte, timeout 
 	if err != nil {
 		return err
 	}
+	dm.oplog.Put(hkey)
+	// TODO: Consider running this at background.
 	db.purgeOldVersions(hkey, name, key)
 	return nil
 }

@@ -28,7 +28,9 @@ import (
 	"github.com/buraksezer/consistent"
 	"github.com/buraksezer/olric/internal/offheap"
 	"github.com/buraksezer/olric/internal/protocol"
+	"github.com/buraksezer/olric/internal/snapshot"
 	"github.com/buraksezer/olric/internal/transport"
+	"github.com/dgraph-io/badger"
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/logutils"
 	"github.com/hashicorp/memberlist"
@@ -68,6 +70,7 @@ type Olric struct {
 	partitions map[uint64]*partition
 	backups    map[uint64]*partition
 	client     *transport.Client
+	snapshot   *snapshot.Snapshot
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
@@ -89,6 +92,7 @@ type dmap struct {
 	sync.Mutex
 
 	locker *locker
+	oplog  *snapshot.OpLog
 	oh     *offheap.Offheap
 }
 
@@ -187,6 +191,12 @@ func New(c *Config) (*Olric, error) {
 		MaxConn:     1024, // TODO: Make this configurable.
 	}
 	client := transport.NewClient(cc)
+
+	snap, err := snapshot.New(badger.DefaultOptions, c.PartitionCount, 100*time.Millisecond)
+	if err != nil {
+		return nil, err
+	}
+
 	db := &Olric{
 		ctx:        ctx,
 		cancel:     cancel,
@@ -196,6 +206,7 @@ func New(c *Config) (*Olric, error) {
 		serializer: c.Serializer,
 		consistent: consistent.New(nil, cfg),
 		client:     client,
+		snapshot:   snap,
 		partitions: make(map[uint64]*partition),
 		backups:    make(map[uint64]*partition),
 		bcx:        bctx,
@@ -246,6 +257,7 @@ func (db *Olric) prepare() error {
 		// The coordinator bootstraps itself.
 		db.bcancel()
 	}
+
 	db.wg.Add(2)
 	go db.listenMemberlistEvents(eventCh)
 	go db.updateCurrentUnixNano()
@@ -439,6 +451,7 @@ func (db *Olric) getDMap(name string, hkey uint64) (*dmap, error) {
 	}
 	dm = &dmap{
 		locker: newLocker(),
+		oplog:  db.snapshot.RegisterDMap(part.id, name),
 		oh:     oh,
 	}
 	res, _ := part.m.LoadOrStore(name, dm)
@@ -463,12 +476,12 @@ func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
 	}
 	dm = &dmap{
 		locker: newLocker(),
+		oplog:  db.snapshot.RegisterDMap(part.id, name),
 		oh:     oh,
 	}
 	res, _ := part.m.LoadOrStore(name, dm)
 	atomic.AddInt32(&part.count, 1)
 	return res.(*dmap), nil
-
 }
 
 func (db *Olric) requestTo(addr string, opcode protocol.OpCode, req *protocol.Message) (*protocol.Message, error) {
