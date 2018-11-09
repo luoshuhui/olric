@@ -15,6 +15,7 @@
 package offheap
 
 import (
+	"bytes"
 	"context"
 	"sync"
 	"sync/atomic"
@@ -129,6 +130,29 @@ func (o *Offheap) Put(hkey uint64, value *VData) error {
 		// returns an error or nil.
 		return err
 	}
+}
+
+func (o *Offheap) GetRaw(hkey uint64, buf *bytes.Buffer) error {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	if len(o.tables) == 0 {
+		panic("tables cannot be empty")
+	}
+
+	// Scan available tables by starting the last added table.
+	for i := len(o.tables) - 1; i >= 0; i-- {
+		t := o.tables[i]
+		if prev := t.getRaw(hkey, buf); prev {
+			// Try out the other tables.
+			continue
+		}
+		// Found the key, return the stored value with its metadata.
+		return nil
+	}
+
+	// Nothing here.
+	return ErrKeyNotFound
 }
 
 // Get gets the value for the given key. It returns ErrKeyNotFound if the DB

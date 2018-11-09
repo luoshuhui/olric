@@ -191,12 +191,6 @@ func New(c *Config) (*Olric, error) {
 		MaxConn:     1024, // TODO: Make this configurable.
 	}
 	client := transport.NewClient(cc)
-
-	snap, err := snapshot.New(badger.DefaultOptions, c.PartitionCount, 100*time.Millisecond)
-	if err != nil {
-		return nil, err
-	}
-
 	db := &Olric{
 		ctx:        ctx,
 		cancel:     cancel,
@@ -206,14 +200,31 @@ func New(c *Config) (*Olric, error) {
 		serializer: c.Serializer,
 		consistent: consistent.New(nil, cfg),
 		client:     client,
-		snapshot:   snap,
 		partitions: make(map[uint64]*partition),
 		backups:    make(map[uint64]*partition),
 		bcx:        bctx,
 		bcancel:    bcancel,
 		server:     transport.NewServer(c.Name, c.Logger, c.KeepAlivePeriod),
 	}
-
+	if c.Snapshot != nil {
+		if c.Snapshot.BadgerOptions == nil {
+			c.Snapshot.BadgerOptions = &badger.DefaultOptions
+		}
+		if len(c.Snapshot.Dir) == 0 {
+			dir, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			c.Snapshot.Dir = dir
+		}
+		c.Snapshot.BadgerOptions.Dir = c.Snapshot.Dir
+		c.Snapshot.BadgerOptions.ValueDir = c.Snapshot.Dir
+		snap, err := snapshot.New(c.Snapshot.BadgerOptions, c.PartitionCount, c.Snapshot.Internal)
+		if err != nil {
+			return nil, err
+		}
+		db.snapshot = snap
+	}
 	// Create all the partitions. It's read-only. No need for locking.
 	for i := uint64(0); i < c.PartitionCount; i++ {
 		db.partitions[i] = &partition{id: i}
@@ -352,6 +363,12 @@ func (db *Olric) Shutdown(ctx context.Context) error {
 		}
 	}
 
+	if db.snapshot != nil {
+		if err := db.snapshot.Shutdown(); err != nil {
+			result = multierror.Append(result, err)
+		}
+	}
+
 	db.wg.Wait()
 
 	// Free allocated memory by mmap.
@@ -451,7 +468,7 @@ func (db *Olric) getDMap(name string, hkey uint64) (*dmap, error) {
 	}
 	dm = &dmap{
 		locker: newLocker(),
-		oplog:  db.snapshot.RegisterDMap(part.id, name),
+		oplog:  db.snapshot.RegisterDMap(part.id, name, oh),
 		oh:     oh,
 	}
 	res, _ := part.m.LoadOrStore(name, dm)
@@ -476,7 +493,7 @@ func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
 	}
 	dm = &dmap{
 		locker: newLocker(),
-		oplog:  db.snapshot.RegisterDMap(part.id, name),
+		oplog:  db.snapshot.RegisterDMap(part.id, name, oh),
 		oh:     oh,
 	}
 	res, _ := part.m.LoadOrStore(name, dm)

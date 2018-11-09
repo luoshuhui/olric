@@ -95,6 +95,9 @@ func (db *Olric) delKeyVal(dm *dmap, hkey uint64, name, key string) error {
 			return err
 		}
 	}
+	if db.snapshot != nil {
+		dm.oplog.Delete(hkey)
+	}
 	return dm.oh.Delete(hkey)
 }
 

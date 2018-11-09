@@ -20,6 +20,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dgraph-io/badger"
 	"github.com/hashicorp/memberlist"
 )
 
@@ -44,6 +45,14 @@ const (
 	// DefaultLogLevel determines the log level without extra configuration. It's DEBUG.
 	DefaultLogLevel = "DEBUG"
 )
+
+type Snapshot struct {
+	Internal       time.Duration
+	Dir            string
+	GCInterval     time.Duration
+	GCDiscardRatio float64
+	BadgerOptions  *badger.Options
+}
 
 // Config is the configuration for creating a Olric instance.
 type Config struct {
@@ -99,6 +108,8 @@ type Config struct {
 	// behavior for using LogOutput. You cannot specify both LogOutput and Logger
 	// at the same time.
 	Logger *log.Logger
+
+	Snapshot *Snapshot
 
 	// MemberlistConfig is the memberlist configuration that Olric will
 	// use to do the underlying membership management and gossip. Some

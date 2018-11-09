@@ -15,6 +15,7 @@
 package offheap
 
 import (
+	"bytes"
 	"encoding/binary"
 	"syscall"
 
@@ -120,6 +121,30 @@ func (t *table) put(hkey uint64, value *VData) error {
 	copy(t.memory[t.offset:], value.Value)
 	t.offset += len(value.Value)
 	return nil
+}
+
+func (t *table) getRaw(hkey uint64, buf *bytes.Buffer) bool {
+	offset, ok := t.keys[hkey]
+	if !ok {
+		return true
+	}
+	start, end := offset, offset
+
+	// In-memory structure:
+	// 1                 | klen       | 8           | 4                    | vlen
+	// KEY-LENGTH(uint8) | KEY(bytes) | TTL(uint64) | VALUE-LENGTH(uint32) | VALUE(bytes)
+	klen := int(uint8(t.memory[end]))
+	end++       // One byte to keep key length
+	end += klen // Key length
+	end += 8    // For bytes for TTL
+
+	vlen := binary.BigEndian.Uint32(t.memory[end : end+4])
+	end += 4         // 4 bytes to keep value length
+	end += int(vlen) // Value length
+
+	// Copy to buffer.
+	buf.Write(t.memory[start:end])
+	return false
 }
 
 func (t *table) get(hkey uint64) (*VData, bool) {
