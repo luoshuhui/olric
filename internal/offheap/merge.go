@@ -54,8 +54,8 @@ func (o *Offheap) chunkedMergeTables() bool {
 	for _, old := range o.tables[:len(o.tables)-1] {
 		// Removing keys while iterating on map is totally safe in Go.
 		for hkey := range old.keys {
-			vdata, _ := old.get(hkey)
-			err := fresh.put(hkey, vdata)
+			vdata, _ := old.getRaw(hkey)
+			err := fresh.putRaw(hkey, vdata)
 			if err == errNotEnoughSpace {
 				// Create a new table and put the new k/v pair in it.
 				nt, err := newTable(fresh.allocated * 2)
@@ -65,6 +65,9 @@ func (o *Offheap) chunkedMergeTables() bool {
 				}
 				o.tables = append(o.tables, nt)
 				return false
+			}
+			if err != nil {
+				log.Printf("[ERROR] Failed to merge tables. HKey: %d: %v", hkey, err)
 			}
 
 			// Dont check the returned val, it's useless because

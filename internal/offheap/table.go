@@ -77,6 +77,19 @@ func (t *table) malloc(size int) error {
 	return nil
 }
 
+func (t *table) putRaw(hkey uint64, value []byte) error {
+	// Check empty space on allocated memory area.
+	inuse := len(value)
+	if inuse+t.offset >= t.allocated {
+		return errNotEnoughSpace
+	}
+	t.keys[hkey] = t.offset
+	copy(t.memory[t.offset:], value)
+	t.inuse += inuse
+	t.offset += inuse
+	return nil
+}
+
 // In-memory layout for entry:
 //
 // KEY-LENGTH(uint8) | KEY(bytes) | TTL(uint64) | VALUE-LENGTH(uint32) | VALUE(bytes)
