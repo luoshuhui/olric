@@ -16,6 +16,7 @@ package offheap
 
 import (
 	"context"
+	"encoding/binary"
 	"sync"
 	"sync/atomic"
 
@@ -336,4 +337,25 @@ func (o *Offheap) Range(f func(hkey uint64, vdata *VData) bool) {
 			}
 		}
 	}
+}
+
+func DecodeRaw(raw []byte) *VData {
+	offset := 0
+	vdata := &VData{}
+	// In-memory structure:
+	//
+	// KEY-LENGTH(uint8) | KEY(bytes) | TTL(uint64) | VALUE-LENGTH(uint32) | VALUE(bytes)
+	klen := int(uint8(raw[offset]))
+	offset++
+
+	vdata.Key = string(raw[offset : offset+klen])
+	offset += klen
+
+	vdata.TTL = int64(binary.BigEndian.Uint64(raw[offset : offset+8]))
+	offset += 8
+
+	vlen := binary.BigEndian.Uint32(raw[offset : offset+4])
+	offset += 4
+	vdata.Value = raw[offset : offset+int(vlen)]
+	return vdata
 }

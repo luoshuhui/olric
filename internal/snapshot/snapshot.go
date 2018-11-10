@@ -256,3 +256,16 @@ func (s *Snapshot) UnregisterDMap(partID uint64, name string) {
 		delete(s.oplogs, partID)
 	}
 }
+
+func (s *Snapshot) Get(hkey uint64) ([]byte, error) {
+	txn := s.db.NewTransaction(false)
+	defer txn.Discard()
+
+	tmp := make([]byte, 8)
+	binary.BigEndian.PutUint64(tmp, hkey)
+	item, err := txn.Get(tmp)
+	if err != nil {
+		return nil, err
+	}
+	return item.ValueCopy(tmp)
+}
