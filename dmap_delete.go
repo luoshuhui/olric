@@ -51,7 +51,11 @@ func (db *Olric) deleteStaleDMaps() {
 					return true
 				}
 				part.m.Delete(name)
-				db.snapshot.UnregisterDMap(part.id, name.(string))
+
+				if db.config.OperationMode != OpInMemory {
+					db.snapshot.UnregisterDMap(part.id, name.(string))
+				}
+
 				atomic.AddInt32(&part.count, -1)
 				db.logger.Printf("[DEBUG] Stale DMap has been deleted: %s on PartID: %d", name, part.id)
 			}

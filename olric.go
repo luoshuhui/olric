@@ -30,7 +30,6 @@ import (
 	"github.com/buraksezer/olric/internal/protocol"
 	"github.com/buraksezer/olric/internal/snapshot"
 	"github.com/buraksezer/olric/internal/transport"
-	"github.com/dgraph-io/badger"
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/logutils"
 	"github.com/hashicorp/memberlist"
@@ -206,20 +205,9 @@ func New(c *Config) (*Olric, error) {
 		bcancel:    bcancel,
 		server:     transport.NewServer(c.Name, c.Logger, c.KeepAlivePeriod),
 	}
-	if c.Snapshot != nil {
-		if c.Snapshot.BadgerOptions == nil {
-			c.Snapshot.BadgerOptions = &badger.DefaultOptions
-		}
-		if len(c.Snapshot.Dir) == 0 {
-			dir, err := os.Getwd()
-			if err != nil {
-				return nil, err
-			}
-			c.Snapshot.Dir = dir
-		}
-		c.Snapshot.BadgerOptions.Dir = c.Snapshot.Dir
-		c.Snapshot.BadgerOptions.ValueDir = c.Snapshot.Dir
-		snap, err := snapshot.New(c.Snapshot.BadgerOptions, c.PartitionCount, c.Snapshot.Internal)
+	if c.OperationMode != OpInMemory {
+		snap, err := snapshot.New(c.BadgerOptions, c.SnapshotInterval,
+			c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.PartitionCount)
 		if err != nil {
 			return nil, err
 		}
@@ -466,19 +454,16 @@ func (db *Olric) getDMap(name string, hkey uint64) (*dmap, error) {
 	if err != nil {
 		return nil, err
 	}
-	dm = &dmap{
+	tmp := &dmap{
 		locker: newLocker(),
-		oplog:  db.snapshot.RegisterDMap(part.id, name, oh),
 		oh:     oh,
 	}
-	res, _ := part.m.LoadOrStore(name, dm)
+	if db.config.OperationMode != OpInMemory {
+		tmp.oplog = db.snapshot.RegisterDMap(part.id, name, oh)
+	}
+	res, _ := part.m.LoadOrStore(name, tmp)
 	atomic.AddInt32(&part.count, 1)
 	return res.(*dmap), nil
-}
-
-// hostCmp returns true if o1 and o2 is the same.
-func hostCmp(o1, o2 host) bool {
-	return o1.Name == o2.Name && o1.Birthdate == o2.Birthdate
 }
 
 func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
@@ -491,14 +476,21 @@ func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
 	if err != nil {
 		return nil, err
 	}
-	dm = &dmap{
+	tmp := &dmap{
 		locker: newLocker(),
-		oplog:  db.snapshot.RegisterDMap(part.id, name, oh),
 		oh:     oh,
 	}
-	res, _ := part.m.LoadOrStore(name, dm)
+	if db.config.OperationMode != OpInMemory {
+		tmp.oplog = db.snapshot.RegisterDMap(part.id, name, oh)
+	}
+	res, _ := part.m.LoadOrStore(name, tmp)
 	atomic.AddInt32(&part.count, 1)
 	return res.(*dmap), nil
+}
+
+// hostCmp returns true if o1 and o2 is the same.
+func hostCmp(o1, o2 host) bool {
+	return o1.Name == o2.Name && o1.Birthdate == o2.Birthdate
 }
 
 func (db *Olric) requestTo(addr string, opcode protocol.OpCode, req *protocol.Message) (*protocol.Message, error) {

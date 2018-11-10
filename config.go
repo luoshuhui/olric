@@ -46,13 +46,12 @@ const (
 	DefaultLogLevel = "DEBUG"
 )
 
-type Snapshot struct {
-	Internal       time.Duration
-	Dir            string
-	GCInterval     time.Duration
-	GCDiscardRatio float64
-	BadgerOptions  *badger.Options
-}
+type OpMode uint8
+
+const (
+	OpInMemory OpMode = OpMode(iota)
+	OpInMemoryWithSnapshot
+)
 
 // Config is the configuration for creating a Olric instance.
 type Config struct {
@@ -62,6 +61,8 @@ type Config struct {
 	//
 	// Name is also used by the TCP server as Addr. It should be an IP adress or domain name of the server.
 	Name string
+
+	OperationMode OpMode
 
 	KeepAlivePeriod time.Duration
 
@@ -109,7 +110,10 @@ type Config struct {
 	// at the same time.
 	Logger *log.Logger
 
-	Snapshot *Snapshot
+	SnapshotInterval     time.Duration
+	BadgerGCInterval     time.Duration
+	BadgerGCDiscardRatio float64
+	BadgerOptions        *badger.Options
 
 	// MemberlistConfig is the memberlist configuration that Olric will
 	// use to do the underlying membership management and gossip. Some

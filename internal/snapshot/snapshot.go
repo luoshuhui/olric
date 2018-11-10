@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/binary"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -60,42 +61,50 @@ func (o *OpLog) Delete(hkey uint64) {
 type Snapshot struct {
 	mu sync.RWMutex
 
-	db           *badger.DB
-	bufpool      *bufpool.BufPool
-	oplogs       map[uint64]map[string]*OpLog
-	syncInterval time.Duration
-	wg           sync.WaitGroup
-	ctx          context.Context
-	cancel       context.CancelFunc
+	db               *badger.DB
+	bufpool          *bufpool.BufPool
+	oplogs           map[uint64]map[string]*OpLog
+	snapshotInterval time.Duration
+	wg               sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
-func New(opts *badger.Options, partitionCount uint64, syncInterval time.Duration) (*Snapshot, error) {
-	if syncInterval.Seconds() == 0 {
-		syncInterval = defaultSyncInterval
+//snap, err := snapshot.New(c.BadgerOptions, c.SnapshotInterval,
+//	c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.PartitionCount)
+
+func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration, gcDiscardRatio float64, partitionCount uint64) (*Snapshot, error) {
+	if opt == nil {
+		opt = &badger.DefaultOptions
+	}
+	if len(opt.Dir) == 0 {
+		dir, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		opt.Dir = dir
+	}
+	opt.ValueDir = opt.Dir
+
+	if snapshotInterval.Seconds() == 0 {
+		snapshotInterval = defaultSyncInterval
 	}
 
-	// TEMP START
-	if opts == nil {
-		opts = &badger.DefaultOptions
-	}
-	opts.Dir = "/Users/burak/badger-data"
-	opts.ValueDir = "/Users/burak/badger-data"
-	opts.ValueLogFileSize = 20971520
-	// TEMP END
+	opt.ValueLogFileSize = 20971520
 
-	db, err := badger.Open(*opts)
+	db, err := badger.Open(*opt)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Snapshot{
-		db:           db,
-		bufpool:      bufpool.New(),
-		oplogs:       make(map[uint64]map[string]*OpLog),
-		syncInterval: syncInterval,
-		ctx:          ctx,
-		cancel:       cancel,
+		db:               db,
+		bufpool:          bufpool.New(),
+		oplogs:           make(map[uint64]map[string]*OpLog),
+		snapshotInterval: snapshotInterval,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 	for partID := uint64(0); partID < partitionCount; partID++ {
 		s.wg.Add(1)
@@ -189,7 +198,7 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 
 func (s *Snapshot) scanPartition(partID uint64) {
 	defer s.wg.Done()
-	ticker := time.NewTicker(s.syncInterval)
+	ticker := time.NewTicker(s.snapshotInterval)
 	defer ticker.Stop()
 
 	sync := func() {
