@@ -22,15 +22,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buraksezer/olric/internal/bufpool"
 	"github.com/buraksezer/olric/internal/offheap"
 	"github.com/dgraph-io/badger"
 )
 
-// TODO: Implement a global logger for Olric package
-
-// sync dmaps to disk 10 times per second.
-const defaultSyncInterval = 100 * time.Millisecond
+const (
+	defaultSnapshotInterval         = 100 * time.Millisecond
+	defaultGCInterval               = 5 * time.Minute
+	defaultGCDiscardRatio   float64 = 0.7
+)
 
 const (
 	opPut uint8 = 0
@@ -62,7 +62,6 @@ type Snapshot struct {
 	mu sync.RWMutex
 
 	db               *badger.DB
-	bufpool          *bufpool.BufPool
 	oplogs           map[uint64]map[string]*OpLog
 	snapshotInterval time.Duration
 	wg               sync.WaitGroup
@@ -70,10 +69,8 @@ type Snapshot struct {
 	cancel           context.CancelFunc
 }
 
-//snap, err := snapshot.New(c.BadgerOptions, c.SnapshotInterval,
-//	c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.PartitionCount)
-
-func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration, gcDiscardRatio float64, partitionCount uint64) (*Snapshot, error) {
+func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
+	gcDiscardRatio float64, partitionCount uint64) (*Snapshot, error) {
 	if opt == nil {
 		opt = &badger.DefaultOptions
 	}
@@ -86,12 +83,19 @@ func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration, gcDisc
 	}
 	opt.ValueDir = opt.Dir
 
+	if gcDiscardRatio == 0 {
+		gcDiscardRatio = defaultGCDiscardRatio
+	}
+
+	if gcInterval.Seconds() == 0 {
+		gcInterval = defaultGCInterval
+	}
+
 	if snapshotInterval.Seconds() == 0 {
-		snapshotInterval = defaultSyncInterval
+		snapshotInterval = defaultSnapshotInterval
 	}
 
 	opt.ValueLogFileSize = 20971520
-
 	db, err := badger.Open(*opt)
 	if err != nil {
 		return nil, err
@@ -100,7 +104,6 @@ func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration, gcDisc
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Snapshot{
 		db:               db,
-		bufpool:          bufpool.New(),
 		oplogs:           make(map[uint64]map[string]*OpLog),
 		snapshotInterval: snapshotInterval,
 		ctx:              ctx,
@@ -127,7 +130,8 @@ func (s *Snapshot) Shutdown() error {
 	return s.db.Close()
 }
 
-func (s *Snapshot) del(hkey uint64, bkey []byte, tx *badger.Txn) error {
+func (s *Snapshot) del(hkey uint64, tx *badger.Txn) error {
+	bkey := make([]byte, 8)
 	binary.BigEndian.PutUint64(bkey, hkey)
 	err := tx.Delete(bkey)
 	if err == badger.ErrTxnTooBig {
@@ -140,27 +144,20 @@ func (s *Snapshot) del(hkey uint64, bkey []byte, tx *badger.Txn) error {
 	return err
 }
 
-func (s *Snapshot) put(name string, hkey uint64, bkey []byte, tx *badger.Txn, off *offheap.Offheap) error {
-	buf := s.bufpool.Get()
-	defer s.bufpool.Put(buf)
-
-	err := off.GetRaw(hkey, buf)
+func (s *Snapshot) put(name string, hkey uint64, tx *badger.Txn, off *offheap.Offheap) error {
+	val, err := off.GetRaw(hkey)
 	if err != nil {
 		return err
 	}
-	// TODO: We may want to set name-length before.
-	_, err = buf.WriteString(name)
-	if err != nil {
-		return err
-	}
+	bkey := make([]byte, 8)
 	binary.BigEndian.PutUint64(bkey, hkey)
-	err = tx.Set(bkey, buf.Bytes())
+	err = tx.Set(bkey, val)
 	if err == badger.ErrTxnTooBig {
 		if err = tx.Commit(nil); err != nil {
 			return err
 		}
 		tx = s.db.NewTransaction(true)
-		return tx.Set(bkey, buf.Bytes())
+		return tx.Set(bkey, val)
 	}
 	return err
 }
@@ -180,13 +177,13 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 	oplog.Unlock()
 
 	var err error
-	bkey := make([]byte, 8)
 	tx := s.db.NewTransaction(true)
+	defer tx.Discard()
 	for hkey, op := range tmp {
 		if op == opPut {
-			err = s.put(name, hkey, bkey, tx, oplog.o)
+			err = s.put(name, hkey, tx, oplog.o)
 		} else {
-			err = s.del(hkey, bkey, tx)
+			err = s.del(hkey, tx)
 		}
 		if err != nil {
 			log.Printf("[ERROR] Failed to set hkey: %d on %s: %v", hkey, name, err)

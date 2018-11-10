@@ -15,7 +15,6 @@
 package offheap
 
 import (
-	"bytes"
 	"encoding/binary"
 	"syscall"
 
@@ -123,10 +122,10 @@ func (t *table) put(hkey uint64, value *VData) error {
 	return nil
 }
 
-func (t *table) getRaw(hkey uint64, buf *bytes.Buffer) bool {
+func (t *table) getRaw(hkey uint64) ([]byte, bool) {
 	offset, ok := t.keys[hkey]
 	if !ok {
-		return true
+		return nil, true
 	}
 	start, end := offset, offset
 
@@ -142,9 +141,10 @@ func (t *table) getRaw(hkey uint64, buf *bytes.Buffer) bool {
 	end += 4         // 4 bytes to keep value length
 	end += int(vlen) // Value length
 
-	// Copy to buffer.
-	buf.Write(t.memory[start:end])
-	return false
+	// Create a copy of the requested data.
+	rawval := make([]byte, (end-start)+1)
+	copy(rawval, t.memory[start:end])
+	return rawval, false
 }
 
 func (t *table) get(hkey uint64) (*VData, bool) {
