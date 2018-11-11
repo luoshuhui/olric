@@ -361,6 +361,9 @@ func DecodeRaw(raw []byte) *VData {
 }
 
 func (o *Offheap) EncodeHKeys() []byte {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	count := 0
 	for _, t := range o.tables {
 		count += len(t.hkeys)
