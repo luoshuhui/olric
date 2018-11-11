@@ -36,7 +36,7 @@ var (
 )
 
 type table struct {
-	keys   map[uint64]int
+	hkeys  map[uint64]int
 	memory []byte
 	offset int
 
@@ -51,7 +51,7 @@ func newTable(size int) (*table, error) {
 		size = minimumSize
 	}
 	t := &table{
-		keys:      make(map[uint64]int),
+		hkeys:     make(map[uint64]int),
 		allocated: size,
 	}
 	err := t.malloc(size)
@@ -83,7 +83,7 @@ func (t *table) putRaw(hkey uint64, value []byte) error {
 	if inuse+t.offset >= t.allocated {
 		return errNotEnoughSpace
 	}
-	t.keys[hkey] = t.offset
+	t.hkeys[hkey] = t.offset
 	copy(t.memory[t.offset:], value)
 	t.inuse += inuse
 	t.offset += inuse
@@ -105,11 +105,11 @@ func (t *table) put(hkey uint64, value *VData) error {
 	}
 
 	// If we already have the key, delete it.
-	if _, ok := t.keys[hkey]; ok {
+	if _, ok := t.hkeys[hkey]; ok {
 		t.delete(hkey)
 	}
 
-	t.keys[hkey] = t.offset
+	t.hkeys[hkey] = t.offset
 	t.inuse += inuse
 
 	// Set key length. It's 1 byte.
@@ -136,7 +136,7 @@ func (t *table) put(hkey uint64, value *VData) error {
 }
 
 func (t *table) getRaw(hkey uint64) ([]byte, bool) {
-	offset, ok := t.keys[hkey]
+	offset, ok := t.hkeys[hkey]
 	if !ok {
 		return nil, true
 	}
@@ -161,7 +161,7 @@ func (t *table) getRaw(hkey uint64) ([]byte, bool) {
 }
 
 func (t *table) get(hkey uint64) (*VData, bool) {
-	offset, ok := t.keys[hkey]
+	offset, ok := t.hkeys[hkey]
 	if !ok {
 		return nil, true
 	}
@@ -186,7 +186,7 @@ func (t *table) get(hkey uint64) (*VData, bool) {
 }
 
 func (t *table) delete(hkey uint64) bool {
-	offset, ok := t.keys[hkey]
+	offset, ok := t.hkeys[hkey]
 	if !ok {
 		// Try the previous table.
 		return true
@@ -207,7 +207,7 @@ func (t *table) delete(hkey uint64) bool {
 	garbage += 4 + int(vlen)
 
 	// Delete it from metadata
-	delete(t.keys, hkey)
+	delete(t.hkeys, hkey)
 
 	t.garbage += garbage
 	t.inuse -= garbage

@@ -189,7 +189,8 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 			continue
 		}
 	}
-	err = wb.Set(dmapKey(name), oplog.o.ExportKeys(), 0)
+	// Encode available keys to use reloading from BadgerDB.
+	err = wb.Set(dmapKey(name), oplog.o.EncodeHKeys(), 0)
 	if err != nil {
 		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
 	}

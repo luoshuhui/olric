@@ -53,7 +53,7 @@ func (o *Offheap) chunkedMergeTables() bool {
 	fresh := o.tables[len(o.tables)-1]
 	for _, old := range o.tables[:len(o.tables)-1] {
 		// Removing keys while iterating on map is totally safe in Go.
-		for hkey := range old.keys {
+		for hkey := range old.hkeys {
 			vdata, _ := old.getRaw(hkey)
 			err := fresh.putRaw(hkey, vdata)
 			if err == errNotEnoughSpace {
@@ -84,7 +84,7 @@ func (o *Offheap) chunkedMergeTables() bool {
 	// Remove empty tables. Keep the last table.
 	tmp := []*table{o.tables[len(o.tables)-1]}
 	for _, t := range o.tables[:len(o.tables)-1] {
-		if len(t.keys) == 0 {
+		if len(t.hkeys) == 0 {
 			err := t.close()
 			if err != nil {
 				log.Printf("[ERROR] offheap: failed to close table: %v", err)

@@ -229,7 +229,7 @@ func (o *Offheap) Delete(hkey uint64) error {
 }
 
 type transport struct {
-	Keys      map[uint64]int
+	HKeys     map[uint64]int
 	Memory    []byte
 	Offset    int
 	Allocated int
@@ -249,7 +249,7 @@ func (o *Offheap) Export() ([]byte, error) {
 	}
 	t := o.tables[0]
 	tr := &transport{
-		Keys:      t.keys,
+		HKeys:     t.hkeys,
 		Offset:    t.offset,
 		Allocated: t.allocated,
 		Inuse:     t.inuse,
@@ -274,7 +274,7 @@ func Import(data []byte) (*Offheap, error) {
 	}
 
 	t := o.tables[0]
-	t.keys = tr.Keys
+	t.hkeys = tr.HKeys
 	t.offset = tr.Offset
 	t.inuse = tr.Inuse
 	t.garbage = tr.Garbage
@@ -289,7 +289,7 @@ func (o *Offheap) Len() int {
 
 	var total int
 	for _, t := range o.tables {
-		total += len(t.keys)
+		total += len(t.hkeys)
 	}
 	return total
 }
@@ -306,7 +306,7 @@ func (o *Offheap) Check(hkey uint64) bool {
 	// Scan available tables by starting the last added table.
 	for i := len(o.tables) - 1; i >= 0; i-- {
 		t := o.tables[i]
-		_, ok := t.keys[hkey]
+		_, ok := t.hkeys[hkey]
 		if ok {
 			return true
 		}
@@ -330,7 +330,7 @@ func (o *Offheap) Range(f func(hkey uint64, vdata *VData) bool) {
 	// Scan available tables by starting the last added table.
 	for i := len(o.tables) - 1; i >= 0; i-- {
 		t := o.tables[i]
-		for hkey := range t.keys {
+		for hkey := range t.hkeys {
 			vdata, _ := t.get(hkey)
 			if !f(hkey, vdata) {
 				break
@@ -360,16 +360,16 @@ func DecodeRaw(raw []byte) *VData {
 	return vdata
 }
 
-func (o *Offheap) ExportKeys() []byte {
+func (o *Offheap) EncodeHKeys() []byte {
 	count := 0
 	for _, t := range o.tables {
-		count += len(t.keys)
+		count += len(t.hkeys)
 	}
 
 	var offset int
 	res := make([]byte, count*8)
 	for _, t := range o.tables {
-		for hkey, _ := range t.keys {
+		for hkey, _ := range t.hkeys {
 			binary.BigEndian.PutUint64(res[offset:], hkey)
 			offset += 8
 		}
