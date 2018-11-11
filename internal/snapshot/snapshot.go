@@ -58,6 +58,10 @@ func (o *OpLog) Delete(hkey uint64) {
 	o.m[hkey] = opDel
 }
 
+func dmapKey(name string) []byte {
+	return []byte("dmap-keys-" + name)
+}
+
 type Snapshot struct {
 	mu sync.RWMutex
 
@@ -181,9 +185,13 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 			err = wb.Delete(bkey)
 		}
 		if err != nil {
-			s.log.Printf("[ERROR] Failed to set hkey: %d on %s: %v", hkey, name, err)
+			s.log.Printf("[ERROR] Failed to set HKey: %d on %s: %v", hkey, name, err)
 			continue
 		}
+	}
+	err = wb.Set(dmapKey(name), oplog.o.ExportKeys(), 0)
+	if err != nil {
+		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
 	}
 	return wb.Flush()
 }

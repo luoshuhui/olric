@@ -359,3 +359,20 @@ func DecodeRaw(raw []byte) *VData {
 	vdata.Value = raw[offset : offset+int(vlen)]
 	return vdata
 }
+
+func (o *Offheap) ExportKeys() []byte {
+	count := 0
+	for _, t := range o.tables {
+		count += len(t.keys)
+	}
+
+	var offset int
+	res := make([]byte, count*8)
+	for _, t := range o.tables {
+		for hkey, _ := range t.keys {
+			binary.BigEndian.PutUint64(res[offset:], hkey)
+			offset += 8
+		}
+	}
+	return res
+}
