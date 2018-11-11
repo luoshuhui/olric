@@ -24,6 +24,7 @@ import (
 
 	"github.com/buraksezer/olric/internal/offheap"
 	"github.com/dgraph-io/badger"
+	"github.com/vmihailenco/msgpack"
 )
 
 const (
@@ -36,6 +37,8 @@ const (
 	opPut uint8 = 0
 	opDel uint8 = 1
 )
+
+type onDiskDMaps map[uint64]map[string]struct{}
 
 type OpLog struct {
 	sync.Mutex
@@ -109,6 +112,7 @@ func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Snapshot{
 		db:               db,
+		log:              logger,
 		oplogs:           make(map[uint64]map[string]*OpLog),
 		snapshotInterval: snapshotInterval,
 		ctx:              ctx,
@@ -125,12 +129,12 @@ func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
 
 // Shutdown closes a DB. It's crucial to call it to ensure all the pending updates make their way to disk.
 func (s *Snapshot) Shutdown() error {
-	s.cancel()
 	select {
 	case <-s.ctx.Done():
 		return nil
 	default:
 	}
+	s.cancel()
 	// Wait for ongoing sync operations.
 	s.wg.Wait()
 	// Calling DB.Close() multiple times is not safe and would cause panic.
@@ -213,7 +217,7 @@ func (s *Snapshot) scanPartition(partID uint64) {
 		for name, oplog := range part {
 			err := s.syncDMap(name, oplog)
 			if err != nil {
-				s.log.Printf("[ERROR] Failed to sync DMap: %s: %v", name, err)
+				s.log.Printf("[ERROR] Failed to sync DMap: %s on PartID: %d: %v", name, partID, err)
 				return
 			}
 		}
@@ -230,10 +234,54 @@ func (s *Snapshot) scanPartition(partID uint64) {
 	}
 }
 
-func (s *Snapshot) RegisterDMap(partID uint64, name string, o *offheap.Offheap) *OpLog {
+var onDiskDMapsKey = []byte("on-disk-dmaps")
+
+func (s *Snapshot) registerOnBadger(partID uint64, name string) error {
+	return s.db.Update(func(txn *badger.Txn) error {
+		return nil
+		var value onDiskDMaps
+		item, err := txn.Get(onDiskDMapsKey)
+		if err != nil && err != badger.ErrKeyNotFound {
+			// Something went wrong.
+			return err
+		}
+
+		if err == badger.ErrKeyNotFound {
+			// Key not found.
+			value = make(onDiskDMaps)
+			err = nil
+		} else {
+			// err == nil
+			valCopy, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			err = msgpack.Unmarshal(valCopy, &value)
+			if err != nil {
+				return err
+			}
+		}
+		_, ok := value[partID]
+		if !ok {
+			value[partID] = make(map[string]struct{})
+		}
+		value[partID][name] = struct{}{}
+		res, err := msgpack.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return txn.Set(onDiskDMapsKey, res)
+	})
+}
+
+func (s *Snapshot) RegisterDMap(partID uint64, name string, o *offheap.Offheap) (*OpLog, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	err := s.registerOnBadger(partID, name)
+	if err != nil {
+		return nil, err
+	}
 	if _, ok := s.oplogs[partID]; !ok {
 		s.oplogs[partID] = make(map[string]*OpLog)
 	}
@@ -242,21 +290,53 @@ func (s *Snapshot) RegisterDMap(partID uint64, name string, o *offheap.Offheap) 
 		o: o,
 	}
 	s.oplogs[partID][name] = oplog
-	return oplog
+	return oplog, nil
 }
 
-func (s *Snapshot) UnregisterDMap(partID uint64, name string) {
+func (s *Snapshot) unregisterOnBadger(partID uint64, name string) error {
+	return s.db.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get(onDiskDMapsKey)
+		if err != nil {
+			return err
+		}
+
+		var value onDiskDMaps
+		valCopy, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		err = msgpack.Unmarshal(valCopy, &value)
+		if err != nil {
+			return err
+		}
+		delete(value[partID], name)
+		if len(value[partID]) == 0 {
+			delete(value, partID)
+		}
+		res, err := msgpack.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return txn.Set(onDiskDMapsKey, res)
+	})
+}
+
+func (s *Snapshot) UnregisterDMap(partID uint64, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	dmaps, ok := s.oplogs[partID]
 	if !ok {
-		return
+		return nil
+	}
+	if err := s.unregisterOnBadger(partID, name); err != nil {
+		return err
 	}
 	delete(dmaps, name)
 	if len(dmaps) == 0 {
 		delete(s.oplogs, partID)
 	}
+	return nil
 }
 
 func (s *Snapshot) Get(hkey uint64) ([]byte, error) {

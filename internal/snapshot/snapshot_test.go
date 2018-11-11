@@ -52,8 +52,7 @@ func Test_Put(t *testing.T) {
 	defer func() {
 		err = snap.Shutdown()
 		if err != nil {
-			t.Errorf("Expected nil. Got: %v", err)
-			return
+			t.Fatalf("Expected nil. Got: %v", err)
 		}
 		err = os.RemoveAll(tmpdir)
 		if err != nil {
@@ -66,7 +65,11 @@ func Test_Put(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
-		oplogs[partID] = snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		oplog, err := snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		oplogs[partID] = oplog
 	}
 	for hkey := uint64(0); hkey < uint64(100); hkey++ {
 		for _, oplog := range oplogs {
@@ -127,7 +130,11 @@ func Test_Delete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
-		oplogs[partID] = snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		oplog, err := snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		oplogs[partID] = oplog
 	}
 
 	partitions := make(map[uint64][]uint64)
@@ -204,7 +211,11 @@ func Test_Get(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
-		oplogs[partID] = snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		oplog, err := snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		oplogs[partID] = oplog
 	}
 	for hkey := uint64(0); hkey < uint64(100); hkey++ {
 		for _, oplog := range oplogs {

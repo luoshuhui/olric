@@ -459,7 +459,11 @@ func (db *Olric) getDMap(name string, hkey uint64) (*dmap, error) {
 		oh:     oh,
 	}
 	if db.config.OperationMode != OpInMemory {
-		tmp.oplog = db.snapshot.RegisterDMap(part.id, name, oh)
+		r, err := db.snapshot.RegisterDMap(part.id, name, oh)
+		if err != nil {
+			return nil, err
+		}
+		tmp.oplog = r
 	}
 	res, _ := part.m.LoadOrStore(name, tmp)
 	atomic.AddInt32(&part.count, 1)
@@ -481,7 +485,11 @@ func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
 		oh:     oh,
 	}
 	if db.config.OperationMode != OpInMemory {
-		tmp.oplog = db.snapshot.RegisterDMap(part.id, name, oh)
+		r, err := db.snapshot.RegisterDMap(part.id, name, oh)
+		if err != nil {
+			return nil, err
+		}
+		tmp.oplog = r
 	}
 	res, _ := part.m.LoadOrStore(name, tmp)
 	atomic.AddInt32(&part.count, 1)
