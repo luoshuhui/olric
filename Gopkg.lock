@@ -58,7 +58,8 @@
   version = "v1.4"
 
 [[projects]]
-  digest = "1:5f5090f05382959db941fa45acbeb7f4c5241aa8ac0f8f4393dec696e5953f53"
+  branch = "master"
+  digest = "1:537a39f7e938884ca047d5d74ee203ddc024de26fa5adb9214ee1f08ba29731d"
   name = "github.com/dgraph-io/badger"
   packages = [
     ".",
@@ -69,8 +70,7 @@
     "y",
   ]
   pruneopts = "UT"
-  revision = "99233d725dbdd26d156c61b2f42ae1671b794656"
-  version = "v1.5.4"
+  revision = "514fda268ba28d8a42a712aa2936bcb368885763"
 
 [[projects]]
   branch = "master"

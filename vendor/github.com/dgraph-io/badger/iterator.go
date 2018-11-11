@@ -19,6 +19,7 @@ package badger
 import (
 	"bytes"
 	"fmt"
+	"hash/crc32"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,7 +27,6 @@ import (
 	"github.com/dgraph-io/badger/options"
 
 	"github.com/dgraph-io/badger/y"
-	farm "github.com/dgryski/go-farm"
 )
 
 type prefetchStatus uint8
@@ -68,7 +68,7 @@ func (item *Item) ToString() string {
 // Key returns the key.
 //
 // Key is only valid as long as item is valid, or transaction is valid.  If you need to use it
-// outside its validity, please use KeyCopy
+// outside its validity, please use KeyCopy.
 func (item *Item) Key() []byte {
 	return item.key
 }
@@ -95,16 +95,23 @@ func (item *Item) Version() uint64 {
 // If you need to use a value outside a transaction, please use Item.ValueCopy
 // instead, or copy it yourself. Value might change once discard or commit is called.
 // Use ValueCopy if you want to do a Set after Get.
-func (item *Item) Value() ([]byte, error) {
+func (item *Item) Value(fn func(val []byte) error) error {
 	item.wg.Wait()
 	if item.status == prefetched {
-		return item.val, item.err
+		if item.err == nil && fn != nil {
+			fn(item.val)
+		}
+		return item.err
 	}
 	buf, cb, err := item.yieldItemValue()
-	if cb != nil {
-		item.txn.callbacks = append(item.txn.callbacks, cb)
+	defer runCallback(cb)
+	if err != nil {
+		return err
 	}
-	return buf, err
+	if fn != nil {
+		return fn(buf)
+	}
+	return nil
 }
 
 // ValueCopy returns a copy of the value of the item from the value log, writing it to dst slice.
@@ -221,7 +228,7 @@ func (item *Item) prefetchValue() {
 	}
 }
 
-// EstimatedSize returns approximate size of the key-value pair.
+// EstimatedSize returns the approximate size of the key-value pair.
 //
 // This can be called while iterating through a store to quickly estimate the
 // size of a range of key-value pairs (without fetching the corresponding
@@ -236,6 +243,24 @@ func (item *Item) EstimatedSize() int64 {
 	var vp valuePointer
 	vp.Decode(item.vptr)
 	return int64(vp.Len) // includes key length.
+}
+
+// ValueSize returns the exact size of the value.
+//
+// This can be called to quickly estimate the size of a value without fetching
+// it.
+func (item *Item) ValueSize() int64 {
+	if !item.hasValue() {
+		return 0
+	}
+	if (item.meta & bitValuePointer) == 0 {
+		return int64(len(item.vptr))
+	}
+	var vp valuePointer
+	vp.Decode(item.vptr)
+
+	klen := int64(len(item.key) + 8) // 8 bytes for timestamp.
+	return int64(vp.Len) - klen - headerBufSize - crc32.Size
 }
 
 // UserMeta returns the userMeta set by the user. Typically, this byte, optionally set by the user
@@ -319,15 +344,25 @@ type Iterator struct {
 	waste list
 
 	lastKey []byte // Used to skip over multiple versions of the same key.
+
+	closed bool
 }
 
 // NewIterator returns a new iterator. Depending upon the options, either only keys, or both
 // key-value pairs would be fetched. The keys are returned in lexicographically sorted order.
-// Using prefetch is highly recommended if you're doing a long running iteration.
-// Avoid long running iterations in update transactions.
+// Using prefetch is recommended if you're doing a long running iteration, for performance.
+//
+// Multiple Iterators:
+// For a read-only txn, multiple iterators can be running simultaneously.  However, for a read-write
+// txn, only one can be running at one time to avoid race conditions, because Txn is thread-unsafe.
 func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
-	if atomic.AddInt32(&txn.numIterators, 1) > 1 {
-		panic("Only one iterator can be active at one time.")
+	if txn.discarded {
+		panic("Transaction has already been discarded")
+	}
+	// Do not change the order of the next if. We must track the number of running iterators.
+	if atomic.AddInt32(&txn.numIterators, 1) > 1 && txn.update {
+		atomic.AddInt32(&txn.numIterators, -1)
+		panic("Only one iterator can be active at one time, for a RW txn.")
 	}
 
 	tables, decr := txn.db.getMemTables()
@@ -362,10 +397,7 @@ func (it *Iterator) newItem() *Item {
 // This item is only valid until it.Next() gets called.
 func (it *Iterator) Item() *Item {
 	tx := it.txn
-	if tx.update {
-		// Track reads if this is an update txn.
-		tx.reads = append(tx.reads, farm.Fingerprint64(it.item.Key()))
-	}
+	tx.addReadKey(it.item.Key())
 	return it.item
 }
 
@@ -380,8 +412,12 @@ func (it *Iterator) ValidForPrefix(prefix []byte) bool {
 
 // Close would close the iterator. It is important to call this when you're done with iteration.
 func (it *Iterator) Close() {
-	it.iitr.Close()
+	if it.closed {
+		return
+	}
+	it.closed = true
 
+	it.iitr.Close()
 	// It is important to wait for the fill goroutines to finish. Otherwise, we might leave zombie
 	// goroutines behind, which are waiting to acquire file read locks after DB has been closed.
 	waitFor := func(l list) {
@@ -557,7 +593,7 @@ func (it *Iterator) prefetch() {
 }
 
 // Seek would seek to the provided key if present. If absent, it would seek to the next smallest key
-// greater than provided if iterating in the forward direction. Behavior would be reversed is
+// greater than the provided key if iterating in the forward direction. Behavior would be reversed if
 // iterating backwards.
 func (it *Iterator) Seek(key []byte) {
 	for i := it.data.pop(); i != nil; i = it.data.pop() {

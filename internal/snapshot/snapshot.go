@@ -149,38 +149,6 @@ func (s *Snapshot) garbageCollection(gcInterval time.Duration, gcDiscardRatio fl
 	}
 }
 
-func (s *Snapshot) del(hkey uint64, tx *badger.Txn) error {
-	bkey := make([]byte, 8)
-	binary.BigEndian.PutUint64(bkey, hkey)
-	err := tx.Delete(bkey)
-	if err == badger.ErrTxnTooBig {
-		if err = tx.Commit(nil); err != nil {
-			return err
-		}
-		tx = s.db.NewTransaction(true)
-		return tx.Delete(bkey)
-	}
-	return err
-}
-
-func (s *Snapshot) put(name string, hkey uint64, tx *badger.Txn, off *offheap.Offheap) error {
-	val, err := off.GetRaw(hkey)
-	if err != nil {
-		return err
-	}
-	bkey := make([]byte, 8)
-	binary.BigEndian.PutUint64(bkey, hkey)
-	err = tx.Set(bkey, val)
-	if err == badger.ErrTxnTooBig {
-		if err = tx.Commit(nil); err != nil {
-			return err
-		}
-		tx = s.db.NewTransaction(true)
-		return tx.Set(bkey, val)
-	}
-	return err
-}
-
 func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 	oplog.Lock()
 	if len(oplog.m) == 0 {
@@ -196,20 +164,27 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 	oplog.Unlock()
 
 	var err error
-	tx := s.db.NewTransaction(true)
-	defer tx.Discard()
+	wb := s.db.NewWriteBatch()
+	defer wb.Cancel()
 	for hkey, op := range tmp {
+		bkey := make([]byte, 8)
+		binary.BigEndian.PutUint64(bkey, hkey)
 		if op == opPut {
-			err = s.put(name, hkey, tx, oplog.o)
+			val, err := oplog.o.GetRaw(hkey)
+			if err != nil {
+				log.Printf("[ERROR] Failed to get HKey: %d from offheap: %v", hkey, err)
+				continue
+			}
+			err = wb.Set(bkey, val, 0)
 		} else {
-			err = s.del(hkey, tx)
+			err = wb.Delete(bkey)
 		}
 		if err != nil {
 			log.Printf("[ERROR] Failed to set hkey: %d on %s: %v", hkey, name, err)
 			continue
 		}
 	}
-	return tx.Commit(nil)
+	return wb.Flush()
 }
 
 func (s *Snapshot) scanPartition(partID uint64) {
