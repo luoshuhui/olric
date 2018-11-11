@@ -46,7 +46,7 @@ func (db *Olric) deleteStaleDMaps() {
 			if d.oh.Len() == 0 {
 				err := d.oh.Close()
 				if err != nil {
-					db.logger.Printf("[ERROR] Failed to close offheap instance: %s on PartID: %d: %v",
+					db.log.Printf("[ERROR] Failed to close offheap instance: %s on PartID: %d: %v",
 						name, part.id, err)
 					return true
 				}
@@ -57,7 +57,7 @@ func (db *Olric) deleteStaleDMaps() {
 				}
 
 				atomic.AddInt32(&part.count, -1)
-				db.logger.Printf("[DEBUG] Stale DMap has been deleted: %s on PartID: %d", name, part.id)
+				db.log.Printf("[DEBUG] Stale DMap has been deleted: %s on PartID: %d", name, part.id)
 			}
 			return true
 		})
@@ -188,7 +188,7 @@ func (db *Olric) deleteKeyValBackup(hkey uint64, name, key string) error {
 			}
 			_, err := db.requestTo(mem.String(), protocol.OpDeleteBackup, req)
 			if err != nil {
-				db.logger.Printf("[ERROR] Failed to delete backup key/value on %s: %s", name, err)
+				db.log.Printf("[ERROR] Failed to delete backup key/value on %s: %s", name, err)
 			}
 			return err
 		})

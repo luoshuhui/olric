@@ -36,7 +36,7 @@ func (db *Olric) destroyDMap(name string) error {
 			}
 			_, err := db.requestTo(addr, protocol.OpDestroyDMap, msg)
 			if err != nil {
-				db.logger.Printf("[ERROR] Failed to destroy dmap:%s on %s", name, addr)
+				db.log.Printf("[ERROR] Failed to destroy dmap:%s on %s", name, addr)
 			}
 			return err
 		})

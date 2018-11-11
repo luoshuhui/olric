@@ -76,7 +76,7 @@ func newTestOlric(peers []string, mc *memberlist.Config) (*Olric, error) {
 		defer r.wg.Done()
 		err = r.server.ListenAndServe()
 		if err != nil {
-			r.logger.Printf("[ERROR] Failed to run TCP server")
+			r.log.Printf("[ERROR] Failed to run TCP server")
 		}
 	}()
 	<-r.server.StartCh
@@ -109,7 +109,7 @@ func TestDMap_Standalone(t *testing.T) {
 	defer func() {
 		err = r.Shutdown(context.Background())
 		if err != nil {
-			r.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			r.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -149,7 +149,7 @@ func TestDMap_NilValue(t *testing.T) {
 	defer func() {
 		err = r.Shutdown(context.Background())
 		if err != nil {
-			r.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			r.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -188,7 +188,7 @@ func TestDMap_NilValueWithTwoMembers(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -208,7 +208,7 @@ func TestDMap_NilValueWithTwoMembers(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -234,7 +234,7 @@ func TestDMap_Put(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -246,7 +246,7 @@ func TestDMap_Put(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -278,7 +278,7 @@ func TestDMap_PutLookup(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -301,7 +301,7 @@ func TestDMap_PutLookup(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -339,7 +339,7 @@ func TestDMap_Get(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -351,7 +351,7 @@ func TestDMap_Get(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -384,7 +384,7 @@ func TestDMap_Delete(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -396,7 +396,7 @@ func TestDMap_Delete(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -432,7 +432,7 @@ func TestDMap_GetLookup(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -455,7 +455,7 @@ func TestDMap_GetLookup(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -479,7 +479,7 @@ func TestDMap_DeleteLookup(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -506,7 +506,7 @@ func TestDMap_DeleteLookup(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -536,7 +536,7 @@ func TestDMap_PruneHosts(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -548,7 +548,7 @@ func TestDMap_PruneHosts(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -569,7 +569,7 @@ func TestDMap_PruneHosts(t *testing.T) {
 	defer func() {
 		err = r3.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -595,7 +595,7 @@ func TestDMap_Destroy(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -607,7 +607,7 @@ func TestDMap_Destroy(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -642,7 +642,7 @@ func TestDMap_CrashServer(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -654,7 +654,7 @@ func TestDMap_CrashServer(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -666,7 +666,7 @@ func TestDMap_CrashServer(t *testing.T) {
 	defer func() {
 		err = r3.Shutdown(context.Background())
 		if err != nil {
-			r3.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			r3.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -708,7 +708,7 @@ func TestDMap_PutEx(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -720,7 +720,7 @@ func TestDMap_PutEx(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -752,7 +752,7 @@ func TestDMap_TTLEviction(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -764,7 +764,7 @@ func TestDMap_TTLEviction(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	db1.updateRouting()
@@ -807,7 +807,7 @@ func TestDMap_DeleteStaleDMaps(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -819,7 +819,7 @@ func TestDMap_DeleteStaleDMaps(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -874,7 +874,7 @@ func TestDMap_PutPurgeOldVersions(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 	dm := db1.NewDMap("mymap")
@@ -897,7 +897,7 @@ func TestDMap_PutPurgeOldVersions(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 

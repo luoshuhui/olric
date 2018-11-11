@@ -28,7 +28,7 @@ func TestDMap_PutBackup(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -40,7 +40,7 @@ func TestDMap_PutBackup(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -97,7 +97,7 @@ func TestDMap_DeleteBackup(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -109,7 +109,7 @@ func TestDMap_DeleteBackup(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -165,7 +165,7 @@ func TestDMap_GetBackup(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -177,7 +177,7 @@ func TestDMap_GetBackup(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -229,7 +229,7 @@ func TestDMap_PruneStaleBackups(t *testing.T) {
 	defer func() {
 		err = db1.Shutdown(context.Background())
 		if err != nil {
-			db1.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db1.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -241,7 +241,7 @@ func TestDMap_PruneStaleBackups(t *testing.T) {
 	defer func() {
 		err = db2.Shutdown(context.Background())
 		if err != nil {
-			db2.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db2.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -263,7 +263,7 @@ func TestDMap_PruneStaleBackups(t *testing.T) {
 	defer func() {
 		err = r3.Shutdown(context.Background())
 		if err != nil {
-			r3.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			r3.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
@@ -275,7 +275,7 @@ func TestDMap_PruneStaleBackups(t *testing.T) {
 	defer func() {
 		err = r4.Shutdown(context.Background())
 		if err != nil {
-			r4.logger.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			r4.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 

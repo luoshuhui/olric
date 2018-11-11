@@ -62,6 +62,7 @@ type Snapshot struct {
 	mu sync.RWMutex
 
 	db               *badger.DB
+	log              *log.Logger
 	oplogs           map[uint64]map[string]*OpLog
 	snapshotInterval time.Duration
 	wg               sync.WaitGroup
@@ -70,7 +71,7 @@ type Snapshot struct {
 }
 
 func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
-	gcDiscardRatio float64, partitionCount uint64) (*Snapshot, error) {
+	gcDiscardRatio float64, partitionCount uint64, logger *log.Logger) (*Snapshot, error) {
 	if opt == nil {
 		opt = &badger.DefaultOptions
 	}
@@ -144,7 +145,7 @@ func (s *Snapshot) garbageCollection(gcInterval time.Duration, gcDiscardRatio fl
 			if err == nil {
 				goto again
 			}
-			log.Printf("[DEBUG] BadgerDB GC returned: %v", err)
+			s.log.Printf("[DEBUG] BadgerDB GC returned: %v", err)
 		}
 	}
 }
@@ -172,7 +173,7 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 		if op == opPut {
 			val, err := oplog.o.GetRaw(hkey)
 			if err != nil {
-				log.Printf("[ERROR] Failed to get HKey: %d from offheap: %v", hkey, err)
+				s.log.Printf("[ERROR] Failed to get HKey: %d from offheap: %v", hkey, err)
 				continue
 			}
 			err = wb.Set(bkey, val, 0)
@@ -180,7 +181,7 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 			err = wb.Delete(bkey)
 		}
 		if err != nil {
-			log.Printf("[ERROR] Failed to set hkey: %d on %s: %v", hkey, name, err)
+			s.log.Printf("[ERROR] Failed to set hkey: %d on %s: %v", hkey, name, err)
 			continue
 		}
 	}
@@ -203,7 +204,7 @@ func (s *Snapshot) scanPartition(partID uint64) {
 		for name, oplog := range part {
 			err := s.syncDMap(name, oplog)
 			if err != nil {
-				log.Printf("[ERROR] Failed to sync DMap: %s: %v", name, err)
+				s.log.Printf("[ERROR] Failed to sync DMap: %s: %v", name, err)
 				return
 			}
 		}

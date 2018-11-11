@@ -61,7 +61,7 @@ var bootstrapTimeoutDuration = 10 * time.Second
 type Olric struct {
 	this       host
 	config     *Config
-	logger     *log.Logger
+	log        *log.Logger
 	hasher     Hasher
 	serializer Serializer
 	discovery  *discovery
@@ -193,7 +193,7 @@ func New(c *Config) (*Olric, error) {
 	db := &Olric{
 		ctx:        ctx,
 		cancel:     cancel,
-		logger:     c.Logger,
+		log:        c.Logger,
 		config:     c,
 		hasher:     c.Hasher,
 		serializer: c.Serializer,
@@ -207,7 +207,7 @@ func New(c *Config) (*Olric, error) {
 	}
 	if c.OperationMode != OpInMemory {
 		snap, err := snapshot.New(c.BadgerOptions, c.SnapshotInterval,
-			c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.PartitionCount)
+			c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.PartitionCount, c.Logger)
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +241,7 @@ func (db *Olric) prepare() error {
 	db.discovery.join()
 	this, err := db.discovery.findMember(db.config.Name)
 	if err != nil {
-		db.logger.Printf("[DEBUG] Failed to get this node in cluster: %v", err)
+		db.log.Printf("[DEBUG] Failed to get this node in cluster: %v", err)
 		serr := db.discovery.shutdown()
 		if serr != nil {
 			return serr
@@ -365,7 +365,7 @@ func (db *Olric) Shutdown(ctx context.Context) error {
 			d := dm.(*dmap)
 			err := d.oh.Close()
 			if err != nil {
-				db.logger.Printf("[ERROR] Failed to close offheap instance: %s on PartID: %d: %v", name, part.id, err)
+				db.log.Printf("[ERROR] Failed to close offheap instance: %s on PartID: %d: %v", name, part.id, err)
 				result = multierror.Append(result, err)
 				return true
 			}

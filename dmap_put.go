@@ -43,7 +43,7 @@ func (db *Olric) purgeOldVersions(hkey uint64, name, key string) {
 		}
 		_, err := db.requestTo(owner.String(), protocol.OpDeletePrev, msg)
 		if err != nil {
-			db.logger.Printf("[ERROR] Failed to remove purge %s: %s on %s", name, key, owner)
+			db.log.Printf("[ERROR] Failed to remove purge %s: %s on %s", name, key, owner)
 		}
 	}
 }
@@ -63,7 +63,7 @@ func (db *Olric) putKeyVal(hkey uint64, name, key string, value []byte, timeout 
 				defer db.wg.Done()
 				err := db.putKeyValBackup(hkey, name, key, value, timeout)
 				if err != nil {
-					db.logger.Printf("[ERROR] Failed to create backup mode in async mode: %v", err)
+					db.log.Printf("[ERROR] Failed to create backup mode in async mode: %v", err)
 				}
 			}()
 		} else {
@@ -207,7 +207,7 @@ func (db *Olric) putKeyValBackup(hkey uint64, name, key string, value []byte, ti
 			}
 			_, err := db.requestTo(mem.String(), protocol.OpPutBackup, msg)
 			if err != nil {
-				db.logger.Printf("[ERROR] Failed to put backup hkey: %s on %s", mem, err)
+				db.log.Printf("[ERROR] Failed to put backup hkey: %s on %s", mem, err)
 				return err
 			}
 			atomic.AddInt32(&successful, 1)

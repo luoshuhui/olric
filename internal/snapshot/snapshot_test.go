@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"strconv"
 	"testing"
@@ -38,7 +39,8 @@ func newSnapshot() (string, *Snapshot, error) {
 	opt := badger.DefaultOptions
 	opt.Dir = dir
 	opt.ValueDir = dir
-	s, err := New(&opt, defaultSnapshotInterval, 0, 0, testPartitionCount)
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+	s, err := New(&opt, defaultSnapshotInterval, 0, 0, testPartitionCount, logger)
 	return dir, s, err
 }
 
