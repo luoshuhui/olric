@@ -113,6 +113,8 @@ func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
 		s.wg.Add(1)
 		go s.scanPartition(partID)
 	}
+	s.wg.Add(1)
+	go s.garbageCollection(gcInterval, gcDiscardRatio)
 	return s, nil
 }
 
@@ -128,6 +130,23 @@ func (s *Snapshot) Shutdown() error {
 	s.wg.Wait()
 	// Calling DB.Close() multiple times is not safe and would cause panic.
 	return s.db.Close()
+}
+
+func (s *Snapshot) garbageCollection(gcInterval time.Duration, gcDiscardRatio float64) {
+	defer s.wg.Done()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-time.After(gcInterval):
+		again:
+			err := s.db.RunValueLogGC(gcDiscardRatio)
+			if err == nil {
+				goto again
+			}
+			log.Printf("[DEBUG] BadgerDB GC returned: %v", err)
+		}
+	}
 }
 
 func (s *Snapshot) del(hkey uint64, tx *badger.Txn) error {
@@ -195,8 +214,6 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 
 func (s *Snapshot) scanPartition(partID uint64) {
 	defer s.wg.Done()
-	ticker := time.NewTicker(s.snapshotInterval)
-	defer ticker.Stop()
 
 	sync := func() {
 		// sync the dmaps to badger.
@@ -222,7 +239,7 @@ func (s *Snapshot) scanPartition(partID uint64) {
 			// Olric instance has been closing. Call sync one last time.
 			sync()
 			return
-		case <-ticker.C:
+		case <-time.After(s.snapshotInterval):
 			sync()
 		}
 	}
