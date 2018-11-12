@@ -100,6 +100,38 @@ func (o *Offheap) Close() error {
 	return nil
 }
 
+// PutRaw sets the raw value for the given key.
+func (o *Offheap) PutRaw(hkey uint64, value []byte) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if len(o.tables) == 0 {
+		panic("tables cannot be empty")
+	}
+
+	for {
+		// Get the last value, offheap only calls Put on the last created table.
+		t := o.tables[len(o.tables)-1]
+		err := t.putRaw(hkey, value)
+		if err == errNotEnoughSpace {
+			// Create a new table and put the new k/v pair in it.
+			nt, err := newTable(t.inuse * 2)
+			if err != nil {
+				return err
+			}
+			o.tables = append(o.tables, nt)
+			if atomic.LoadInt32(&o.merging) == 0 {
+				o.wg.Add(1)
+				atomic.StoreInt32(&o.merging, 1)
+				go o.mergeTables()
+			}
+			continue
+		}
+		// returns an error or nil.
+		return err
+	}
+}
+
 // Put sets the value for the given key. It overwrites any previous value for that key
 func (o *Offheap) Put(hkey uint64, value *VData) error {
 	o.mu.Lock()

@@ -289,7 +289,6 @@ func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 
 func (s *Snapshot) registerOnBadger(dkey []byte, partID uint64, name string) error {
 	return s.db.Update(func(txn *badger.Txn) error {
-		return nil
 		var value onDiskDMaps
 		item, err := txn.Get(dkey)
 		if err != nil && err != badger.ErrKeyNotFound {

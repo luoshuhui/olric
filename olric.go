@@ -69,13 +69,13 @@ type Olric struct {
 	partitions map[uint64]*partition
 	backups    map[uint64]*partition
 	client     *transport.Client
+	server     *transport.Server
 	snapshot   *snapshot.Snapshot
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 	fsckMx     sync.Mutex
 	routingMx  sync.Mutex
-	server     *transport.Server
 	// To control non-bootstrapped Olric instance
 	bcx     context.Context
 	bcancel context.CancelFunc

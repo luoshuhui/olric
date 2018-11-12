@@ -187,3 +187,94 @@ func Test_Delete(t *testing.T) {
 		t.Fatalf("Expected nil. Got: %v", err)
 	}
 }
+
+func Test_Loader(t *testing.T) {
+	tmpdir, snap, err := newSnapshot()
+	if err != nil {
+		t.Errorf("Expected nil. Got: %v", err)
+	}
+	defer func() {
+		err = snap.Shutdown()
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		err = os.RemoveAll(tmpdir)
+		if err != nil {
+			t.Errorf("Expected nil. Got: %v", err)
+		}
+	}()
+	oplogs := make(map[uint64]*OpLog)
+	for partID := uint64(0); partID < testPartitionCount; partID++ {
+		oh, err := offheap.New(0)
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		oplog, err := snap.RegisterDMap(PrimaryDMapKey, partID, "test", oh)
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		oplogs[partID] = oplog
+	}
+	for hkey := uint64(0); hkey < uint64(100); hkey++ {
+		for _, oplog := range oplogs {
+			vdata := &offheap.VData{
+				Key:   strconv.Itoa(int(hkey)),
+				TTL:   1,
+				Value: []byte("value"),
+			}
+			// Store data on Olric's off-heap store.
+			err = oplog.o.Put(hkey, vdata)
+			if err != nil {
+				t.Fatalf("Expected nil. Got: %v", err)
+			}
+			// Call Put on operation log.
+			oplog.Put(hkey)
+			break
+		}
+	}
+
+	// Syncs to the disk 10 times per second, by default.
+	<-time.After(150 * time.Millisecond)
+
+	l, err := snap.NewLoader(PrimaryDMapKey)
+	if err != nil {
+		t.Fatalf("Expected nil. Got: %v", err)
+	}
+	parts := uint64(0)
+	offs := []*offheap.Offheap{}
+	for {
+		_, name, off, err := l.Next()
+		if err == ErrLoaderDone {
+			break
+		}
+		parts++
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		if name != "test" {
+			t.Fatalf("Expected dmap name: test. Got: %s", name)
+		}
+		offs = append(offs, off)
+	}
+	if parts != testPartitionCount {
+		t.Fatalf("Expected partition count %d. Got: %d", testPartitionCount, parts)
+	}
+
+	for hkey := uint64(0); hkey < uint64(100); hkey++ {
+		var found bool
+		for _, off := range offs {
+			_, err := off.Get(hkey)
+			if err == offheap.ErrKeyNotFound {
+				continue
+			}
+			if err != nil {
+				t.Fatalf("Expected nil. Got: %v", err)
+			}
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("HKey: %d could not be found in snapshot", hkey)
+		}
+	}
+}
