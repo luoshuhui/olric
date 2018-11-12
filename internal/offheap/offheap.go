@@ -359,23 +359,3 @@ func DecodeRaw(raw []byte) *VData {
 	vdata.Value = raw[offset : offset+int(vlen)]
 	return vdata
 }
-
-func (o *Offheap) EncodeHKeys() []byte {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	count := 0
-	for _, t := range o.tables {
-		count += len(t.hkeys)
-	}
-
-	var offset int
-	res := make([]byte, count*8)
-	for _, t := range o.tables {
-		for hkey, _ := range t.hkeys {
-			binary.BigEndian.PutUint64(res[offset:], hkey)
-			offset += 8
-		}
-	}
-	return res
-}

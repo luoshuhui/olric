@@ -175,7 +175,26 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 	}
 	oplog.Unlock()
 
-	var err error
+	var hkeys map[uint64]struct{}
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(dmapKey(name))
+		if err == badger.ErrKeyNotFound {
+			hkeys = make(map[uint64]struct{})
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		raw, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		return msgpack.Unmarshal(raw, &hkeys)
+	})
+	if err != nil {
+		return err
+	}
+
 	wb := s.db.NewWriteBatch()
 	defer wb.Cancel()
 	for hkey, op := range tmp {
@@ -184,23 +203,28 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 		if op == opPut {
 			val, err := oplog.o.GetRaw(hkey)
 			if err != nil {
-				s.log.Printf("[ERROR] Failed to get HKey: %d from offheap: %v", hkey, err)
+				s.log.Printf("[ERROR] Failed to get HKey: %d from in-memory storage: %v", hkey, err)
 				continue
 			}
 			err = wb.Set(bkey, val, 0)
+			if err != nil {
+				s.log.Printf("[ERROR] Failed to set HKey: %d on %s: %v", hkey, name, err)
+				continue
+			}
+			hkeys[hkey] = struct{}{}
 		} else {
 			err = wb.Delete(bkey)
-		}
-		if err != nil {
-			s.log.Printf("[ERROR] Failed to set HKey: %d on %s: %v", hkey, name, err)
-			continue
+			if err != nil {
+				s.log.Printf("[ERROR] Failed to delete HKey: %d on %s: %v", hkey, name, err)
+				continue
+			}
+			delete(hkeys, hkey)
 		}
 	}
+
 	// Encode available keys to map hkeys to dmaps on Badger.
-	// NOTE: This is not an optimal solution. But it definitely works.
-	// DMaps on partitions should be small because we need process them
-	// in a small amount of time.
-	err = wb.Set(dmapKey(name), oplog.o.EncodeHKeys(), 0)
+	data, _ := msgpack.Marshal(hkeys)
+	err = wb.Set(dmapKey(name), data, 0)
 	if err != nil {
 		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
 	}
