@@ -81,7 +81,7 @@ func newTestOlric(peers []string, mc *memberlist.Config) (*Olric, error) {
 	}()
 	<-r.server.StartCh
 
-	err = r.prepare()
+	err = r.startDiscovery()
 	if err != nil {
 		return nil, err
 	}

@@ -225,12 +225,17 @@ func New(c *Config) (*Olric, error) {
 			backup: true,
 		}
 	}
-
+	if c.OperationMode == OpInMemoryWithSnapshot {
+		// db.loadSnapshot
+	}
 	db.registerOperations()
+
+	db.wg.Add(1)
+	go db.updateCurrentUnixNano()
 	return db, nil
 }
 
-func (db *Olric) prepare() error {
+func (db *Olric) startDiscovery() error {
 	dsc, err := newDiscovery(db.config)
 	if err != nil {
 		return err
@@ -257,9 +262,8 @@ func (db *Olric) prepare() error {
 		db.bcancel()
 	}
 
-	db.wg.Add(2)
+	db.wg.Add(1)
 	go db.listenMemberlistEvents(eventCh)
-	go db.updateCurrentUnixNano()
 	return nil
 }
 
@@ -284,14 +288,13 @@ func (db *Olric) Start() error {
 	default:
 	}
 
-	if err := db.prepare(); err != nil {
+	if err := db.startDiscovery(); err != nil {
 		return err
 	}
 	db.wg.Add(3)
 	go db.updateRoutingPeriodically()
 	go db.evictKeysAtBackground()
 	go db.deleteStaleDMapsAtBackground()
-
 	return <-errCh
 }
 
