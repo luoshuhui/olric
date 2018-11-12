@@ -207,7 +207,7 @@ func New(c *Config) (*Olric, error) {
 	}
 	if c.OperationMode != OpInMemory {
 		snap, err := snapshot.New(c.BadgerOptions, c.SnapshotInterval,
-			c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.PartitionCount, c.Logger)
+			c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.Logger)
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +459,7 @@ func (db *Olric) getDMap(name string, hkey uint64) (*dmap, error) {
 		oh:     oh,
 	}
 	if db.config.OperationMode != OpInMemory {
-		r, err := db.snapshot.RegisterDMap(part.id, name, oh)
+		r, err := db.snapshot.RegisterDMap(snapshot.PrimaryDMapKey, part.id, name, oh)
 		if err != nil {
 			return nil, err
 		}
@@ -485,7 +485,7 @@ func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
 		oh:     oh,
 	}
 	if db.config.OperationMode != OpInMemory {
-		r, err := db.snapshot.RegisterDMap(part.id, name, oh)
+		r, err := db.snapshot.RegisterDMap(snapshot.BackupDMapKey, part.id, name, oh)
 		if err != nil {
 			return nil, err
 		}

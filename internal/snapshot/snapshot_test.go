@@ -15,7 +15,6 @@
 package snapshot
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
@@ -40,7 +39,7 @@ func newSnapshot() (string, *Snapshot, error) {
 	opt.Dir = dir
 	opt.ValueDir = dir
 	logger := log.New(os.Stderr, "", log.LstdFlags)
-	s, err := New(&opt, defaultSnapshotInterval, 0, 0, testPartitionCount, logger)
+	s, err := New(&opt, defaultSnapshotInterval, 0, 0, logger)
 	return dir, s, err
 }
 
@@ -65,7 +64,7 @@ func Test_Put(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
-		oplog, err := snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		oplog, err := snap.RegisterDMap(PrimaryDMapKey, partID, strconv.Itoa(int(partID)), oh)
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
@@ -130,7 +129,7 @@ func Test_Delete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
-		oplog, err := snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
+		oplog, err := snap.RegisterDMap(PrimaryDMapKey, partID, strconv.Itoa(int(partID)), oh)
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
@@ -186,72 +185,5 @@ func Test_Delete(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Expected nil. Got: %v", err)
-	}
-}
-
-func Test_Get(t *testing.T) {
-	tmpdir, snap, err := newSnapshot()
-	if err != nil {
-		t.Errorf("Expected nil. Got: %v", err)
-	}
-	defer func() {
-		err = snap.Shutdown()
-		if err != nil {
-			t.Errorf("Expected nil. Got: %v", err)
-			return
-		}
-		err = os.RemoveAll(tmpdir)
-		if err != nil {
-			t.Errorf("Expected nil. Got: %v", err)
-		}
-	}()
-	oplogs := make(map[uint64]*OpLog)
-	for partID := uint64(0); partID < testPartitionCount; partID++ {
-		oh, err := offheap.New(0)
-		if err != nil {
-			t.Fatalf("Expected nil. Got: %v", err)
-		}
-		oplog, err := snap.RegisterDMap(partID, strconv.Itoa(int(partID)), oh)
-		if err != nil {
-			t.Fatalf("Expected nil. Got: %v", err)
-		}
-		oplogs[partID] = oplog
-	}
-	for hkey := uint64(0); hkey < uint64(100); hkey++ {
-		for _, oplog := range oplogs {
-			vdata := &offheap.VData{
-				Key:   strconv.Itoa(int(hkey)),
-				TTL:   int64(hkey),
-				Value: []byte("value" + strconv.Itoa(int(hkey))),
-			}
-			// Store data on Olric's off-heap store.
-			err = oplog.o.Put(hkey, vdata)
-			if err != nil {
-				t.Fatalf("Expected nil. Got: %v", err)
-			}
-			// Call Put on operation log.
-			oplog.Put(hkey)
-			break
-		}
-	}
-
-	// Syncs to the disk 10 times per second, by default.
-	<-time.After(150 * time.Millisecond)
-
-	for hkey := uint64(0); hkey < uint64(100); hkey++ {
-		value, err := snap.Get(hkey)
-		if err != nil {
-			t.Fatalf("Expected nil. Got: %v", err)
-		}
-		vdata := offheap.DecodeRaw(value)
-		if vdata.Key != strconv.Itoa(int(hkey)) {
-			t.Fatalf("Expected Key: %d. Got %s", hkey, vdata.Key)
-		}
-		if vdata.TTL != int64(hkey) {
-			t.Fatalf("Expected TTL: %d. Got %d", hkey, vdata.TTL)
-		}
-		if !bytes.Equal(vdata.Value, []byte("value"+strconv.Itoa(int(hkey)))) {
-			t.Fatalf("Different value for HKey: %d", hkey)
-		}
 	}
 }

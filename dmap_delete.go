@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/buraksezer/olric/internal/protocol"
+	"github.com/buraksezer/olric/internal/snapshot"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -51,7 +52,11 @@ func (db *Olric) deleteStaleDMaps() {
 					return true
 				}
 				if db.config.OperationMode != OpInMemory {
-					err = db.snapshot.UnregisterDMap(part.id, name.(string))
+					if part.backup {
+						err = db.snapshot.UnregisterDMap(snapshot.BackupDMapKey, part.id, name.(string))
+					} else {
+						err = db.snapshot.UnregisterDMap(snapshot.PrimaryDMapKey, part.id, name.(string))
+					}
 					if err != nil {
 						db.log.Printf("[ERROR] Failed to unregister dmap from snapshot %s on PartID: %d: %v",
 							name, part.id, err)

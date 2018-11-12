@@ -38,6 +38,11 @@ const (
 	opDel uint8 = 1
 )
 
+var (
+	PrimaryDMapKey = []byte("primary-dmap-key")
+	BackupDMapKey  = []byte("backup-dmap-key")
+)
+
 type onDiskDMaps map[uint64]map[string]struct{}
 
 type OpLog struct {
@@ -70,6 +75,7 @@ type Snapshot struct {
 
 	db               *badger.DB
 	log              *log.Logger
+	workers          map[uint64]context.CancelFunc
 	oplogs           map[uint64]map[string]*OpLog
 	snapshotInterval time.Duration
 	wg               sync.WaitGroup
@@ -78,7 +84,7 @@ type Snapshot struct {
 }
 
 func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
-	gcDiscardRatio float64, partitionCount uint64, logger *log.Logger) (*Snapshot, error) {
+	gcDiscardRatio float64, logger *log.Logger) (*Snapshot, error) {
 	if opt == nil {
 		opt = &badger.DefaultOptions
 	}
@@ -113,14 +119,11 @@ func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
 	s := &Snapshot{
 		db:               db,
 		log:              logger,
+		workers:          make(map[uint64]context.CancelFunc),
 		oplogs:           make(map[uint64]map[string]*OpLog),
 		snapshotInterval: snapshotInterval,
 		ctx:              ctx,
 		cancel:           cancel,
-	}
-	for partID := uint64(0); partID < partitionCount; partID++ {
-		s.wg.Add(1)
-		go s.scanPartition(partID)
 	}
 	s.wg.Add(1)
 	go s.garbageCollection(gcInterval, gcDiscardRatio)
@@ -193,7 +196,10 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 			continue
 		}
 	}
-	// Encode available keys to use reloading from BadgerDB.
+	// Encode available keys to map hkeys to dmaps on Badger.
+	// NOTE: This is not an optimal solution. But it definitely works.
+	// DMaps on partitions should be small because we need process them
+	// in a small amount of time.
 	err = wb.Set(dmapKey(name), oplog.o.EncodeHKeys(), 0)
 	if err != nil {
 		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
@@ -201,7 +207,7 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 	return wb.Flush()
 }
 
-func (s *Snapshot) scanPartition(partID uint64) {
+func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 	defer s.wg.Done()
 
 	sync := func() {
@@ -228,19 +234,20 @@ func (s *Snapshot) scanPartition(partID uint64) {
 			// Olric instance has been closing. Call sync one last time.
 			sync()
 			return
+		case <-ctx.Done():
+			// Partition is empty.
+			return
 		case <-time.After(s.snapshotInterval):
 			sync()
 		}
 	}
 }
 
-var onDiskDMapsKey = []byte("on-disk-dmaps")
-
-func (s *Snapshot) registerOnBadger(partID uint64, name string) error {
+func (s *Snapshot) registerOnBadger(dkey []byte, partID uint64, name string) error {
 	return s.db.Update(func(txn *badger.Txn) error {
 		return nil
 		var value onDiskDMaps
-		item, err := txn.Get(onDiskDMapsKey)
+		item, err := txn.Get(dkey)
 		if err != nil && err != badger.ErrKeyNotFound {
 			// Something went wrong.
 			return err
@@ -270,15 +277,15 @@ func (s *Snapshot) registerOnBadger(partID uint64, name string) error {
 		if err != nil {
 			return err
 		}
-		return txn.Set(onDiskDMapsKey, res)
+		return txn.Set(dkey, res)
 	})
 }
 
-func (s *Snapshot) RegisterDMap(partID uint64, name string, o *offheap.Offheap) (*OpLog, error) {
+func (s *Snapshot) RegisterDMap(dkey []byte, partID uint64, name string, o *offheap.Offheap) (*OpLog, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	err := s.registerOnBadger(partID, name)
+	err := s.registerOnBadger(dkey, partID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -290,12 +297,19 @@ func (s *Snapshot) RegisterDMap(partID uint64, name string, o *offheap.Offheap) 
 		o: o,
 	}
 	s.oplogs[partID][name] = oplog
+
+	if _, ok := s.workers[partID]; !ok {
+		ctx, cancel := context.WithCancel(context.Background())
+		s.workers[partID] = cancel
+		s.wg.Add(1)
+		go s.worker(ctx, partID)
+	}
 	return oplog, nil
 }
 
-func (s *Snapshot) unregisterOnBadger(partID uint64, name string) error {
+func (s *Snapshot) unregisterOnBadger(dkey []byte, partID uint64, name string) error {
 	return s.db.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get(onDiskDMapsKey)
+		item, err := txn.Get(dkey)
 		if err != nil {
 			return err
 		}
@@ -317,11 +331,11 @@ func (s *Snapshot) unregisterOnBadger(partID uint64, name string) error {
 		if err != nil {
 			return err
 		}
-		return txn.Set(onDiskDMapsKey, res)
+		return txn.Set(dkey, res)
 	})
 }
 
-func (s *Snapshot) UnregisterDMap(partID uint64, name string) error {
+func (s *Snapshot) UnregisterDMap(dkey []byte, partID uint64, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -329,25 +343,14 @@ func (s *Snapshot) UnregisterDMap(partID uint64, name string) error {
 	if !ok {
 		return nil
 	}
-	if err := s.unregisterOnBadger(partID, name); err != nil {
+	if err := s.unregisterOnBadger(dkey, partID, name); err != nil {
 		return err
 	}
 	delete(dmaps, name)
 	if len(dmaps) == 0 {
 		delete(s.oplogs, partID)
+		s.workers[partID]()
 	}
+
 	return nil
-}
-
-func (s *Snapshot) Get(hkey uint64) ([]byte, error) {
-	txn := s.db.NewTransaction(false)
-	defer txn.Discard()
-
-	tmp := make([]byte, 8)
-	binary.BigEndian.PutUint64(tmp, hkey)
-	item, err := txn.Get(tmp)
-	if err != nil {
-		return nil, err
-	}
-	return item.ValueCopy(tmp)
 }
