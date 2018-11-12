@@ -51,15 +51,17 @@ func (db *Olric) deleteStaleDMaps() {
 						name, part.id, err)
 					return true
 				}
-				if db.config.OperationMode != OpInMemory {
+				// Unregister DMap from snapshot.
+				if db.config.OperationMode == OpInMemoryWithSnapshot {
+					dkey := snapshot.PrimaryDMapKey
 					if part.backup {
-						err = db.snapshot.UnregisterDMap(snapshot.BackupDMapKey, part.id, name.(string))
-					} else {
-						err = db.snapshot.UnregisterDMap(snapshot.PrimaryDMapKey, part.id, name.(string))
+						dkey = snapshot.BackupDMapKey
 					}
+					err = db.snapshot.UnregisterDMap(dkey, part.id, name.(string))
 					if err != nil {
 						db.log.Printf("[ERROR] Failed to unregister dmap from snapshot %s on PartID: %d: %v",
 							name, part.id, err)
+						// Try again later.
 						return true
 					}
 				}
@@ -107,7 +109,7 @@ func (db *Olric) delKeyVal(dm *dmap, hkey uint64, name, key string) error {
 			return err
 		}
 	}
-	if db.snapshot != nil {
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
 		dm.oplog.Delete(hkey)
 	}
 	return dm.oh.Delete(hkey)
@@ -164,6 +166,9 @@ func (db *Olric) deleteBackupOperation(req *protocol.Message) *protocol.Message 
 	if err != nil {
 		return req.Error(protocol.StatusInternalServerError, err)
 	}
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		dm.oplog.Delete(hkey)
+	}
 	return req.Success()
 }
 
@@ -179,6 +184,10 @@ func (db *Olric) deletePrevOperation(req *protocol.Message) *protocol.Message {
 	err = dm.oh.Delete(hkey)
 	if err != nil {
 		return req.Error(protocol.StatusInternalServerError, err)
+	}
+
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		dm.oplog.Delete(hkey)
 	}
 	return req.Success()
 }

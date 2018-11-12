@@ -88,7 +88,7 @@ func (db *Olric) putKeyVal(hkey uint64, name, key string, value []byte, timeout 
 		return err
 	}
 
-	if db.snapshot != nil {
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
 		dm.oplog.Put(hkey)
 	}
 	// TODO: Consider running this at background.
@@ -171,9 +171,14 @@ func (db *Olric) putBackupOperation(req *protocol.Message) *protocol.Message {
 		TTL:   ttl,
 		Value: req.Value,
 	}
+
 	err = dm.oh.Put(hkey, vdata)
 	if err != nil {
 		return req.Error(protocol.StatusInternalServerError, err)
+	}
+
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		dm.oplog.Put(hkey)
 	}
 	return req.Success()
 }

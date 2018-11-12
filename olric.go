@@ -205,7 +205,7 @@ func New(c *Config) (*Olric, error) {
 		bcancel:    bcancel,
 		server:     transport.NewServer(c.Name, c.Logger, c.KeepAlivePeriod),
 	}
-	if c.OperationMode != OpInMemory {
+	if c.OperationMode == OpInMemoryWithSnapshot {
 		snap, err := snapshot.New(c.BadgerOptions, c.SnapshotInterval,
 			c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.Logger)
 		if err != nil {
@@ -351,7 +351,7 @@ func (db *Olric) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	if db.snapshot != nil {
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
 		if err := db.snapshot.Shutdown(); err != nil {
 			result = multierror.Append(result, err)
 		}
@@ -458,7 +458,7 @@ func (db *Olric) getDMap(name string, hkey uint64) (*dmap, error) {
 		locker: newLocker(),
 		oh:     oh,
 	}
-	if db.config.OperationMode != OpInMemory {
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
 		r, err := db.snapshot.RegisterDMap(snapshot.PrimaryDMapKey, part.id, name, oh)
 		if err != nil {
 			return nil, err
@@ -484,7 +484,7 @@ func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
 		locker: newLocker(),
 		oh:     oh,
 	}
-	if db.config.OperationMode != OpInMemory {
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
 		r, err := db.snapshot.RegisterDMap(snapshot.BackupDMapKey, part.id, name, oh)
 		if err != nil {
 			return nil, err
