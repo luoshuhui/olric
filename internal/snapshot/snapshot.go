@@ -161,11 +161,11 @@ func (s *Snapshot) garbageCollection(gcInterval time.Duration, gcDiscardRatio fl
 	}
 }
 
-func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
+func (s *Snapshot) syncDMap(name string, oplog *OpLog) (map[uint64]uint8, error) {
 	oplog.Lock()
 	if len(oplog.m) == 0 {
 		oplog.Unlock()
-		return nil
+		return nil, nil
 	}
 	// Work on this temporary copy to get rid of disk overhead.
 	tmp := make(map[uint64]uint8)
@@ -192,9 +192,10 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 		return msgpack.Unmarshal(raw, &hkeys)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	failed := make(map[uint64]uint8)
 	wb := s.db.NewWriteBatch()
 	defer wb.Cancel()
 	for hkey, op := range tmp {
@@ -202,13 +203,18 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 		binary.BigEndian.PutUint64(bkey, hkey)
 		if op == opPut {
 			val, err := oplog.o.GetRaw(hkey)
+			if err == offheap.ErrKeyNotFound {
+				continue
+			}
 			if err != nil {
 				s.log.Printf("[ERROR] Failed to get HKey: %d from in-memory storage: %v", hkey, err)
+				failed[hkey] = op
 				continue
 			}
 			err = wb.Set(bkey, val, 0)
 			if err != nil {
 				s.log.Printf("[ERROR] Failed to set HKey: %d on %s: %v", hkey, name, err)
+				failed[hkey] = op
 				continue
 			}
 			hkeys[hkey] = struct{}{}
@@ -216,19 +222,23 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) error {
 			err = wb.Delete(bkey)
 			if err != nil {
 				s.log.Printf("[ERROR] Failed to delete HKey: %d on %s: %v", hkey, name, err)
+				failed[hkey] = op
 				continue
 			}
 			delete(hkeys, hkey)
 		}
 	}
-
 	// Encode available keys to map hkeys to dmaps on Badger.
 	data, _ := msgpack.Marshal(hkeys)
 	err = wb.Set(dmapKey(name), data, 0)
 	if err != nil {
 		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
+		// Return the all hkeys to process again. We may lose all of them if this call
+		// doesn't work.
+		return tmp, wb.Flush()
 	}
-	return wb.Flush()
+	// Failed keys will be processed again by the next call.
+	return failed, wb.Flush()
 }
 
 func (s *Snapshot) worker(ctx context.Context, partID uint64) {
@@ -245,10 +255,20 @@ func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 			return
 		}
 		for name, oplog := range part {
-			err := s.syncDMap(name, oplog)
+			failed, err := s.syncDMap(name, oplog)
 			if err != nil {
 				s.log.Printf("[ERROR] Failed to sync DMap: %s on PartID: %d: %v", name, partID, err)
-				return
+			}
+			if len(failed) != 0 {
+				oplog.Lock()
+				for hkey, op := range failed {
+					_, ok := oplog.m[hkey]
+					if !ok {
+						// Add it again to process in the next call.
+						oplog.m[hkey] = op
+					}
+				}
+				oplog.Unlock()
 			}
 		}
 	}
