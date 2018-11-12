@@ -44,31 +44,33 @@ func (db *Olric) deleteStaleDMaps() {
 			d := dm.(*dmap)
 			d.Lock()
 			defer d.Unlock()
-			if d.oh.Len() == 0 {
-				err := d.oh.Close()
+			if d.oh.Len() != 0 {
+				// Continue scanning.
+				return true
+			}
+			err := d.oh.Close()
+			if err != nil {
+				db.log.Printf("[ERROR] Failed to close offheap instance: %s on PartID: %d: %v",
+					name, part.id, err)
+				return true
+			}
+			// Unregister DMap from snapshot.
+			if db.config.OperationMode == OpInMemoryWithSnapshot {
+				dkey := snapshot.PrimaryDMapKey
+				if part.backup {
+					dkey = snapshot.BackupDMapKey
+				}
+				err = db.snapshot.UnregisterDMap(dkey, part.id, name.(string))
 				if err != nil {
-					db.log.Printf("[ERROR] Failed to close offheap instance: %s on PartID: %d: %v",
+					db.log.Printf("[ERROR] Failed to unregister dmap from snapshot %s on PartID: %d: %v",
 						name, part.id, err)
+					// Try again later.
 					return true
 				}
-				// Unregister DMap from snapshot.
-				if db.config.OperationMode == OpInMemoryWithSnapshot {
-					dkey := snapshot.PrimaryDMapKey
-					if part.backup {
-						dkey = snapshot.BackupDMapKey
-					}
-					err = db.snapshot.UnregisterDMap(dkey, part.id, name.(string))
-					if err != nil {
-						db.log.Printf("[ERROR] Failed to unregister dmap from snapshot %s on PartID: %d: %v",
-							name, part.id, err)
-						// Try again later.
-						return true
-					}
-				}
-				part.m.Delete(name)
-				atomic.AddInt32(&part.count, -1)
-				db.log.Printf("[DEBUG] Stale DMap has been deleted: %s on PartID: %d", name, part.id)
 			}
+			part.m.Delete(name)
+			atomic.AddInt32(&part.count, -1)
+			db.log.Printf("[DEBUG] Stale DMap has been deleted: %s on PartID: %d", name, part.id)
 			return true
 		})
 	}
