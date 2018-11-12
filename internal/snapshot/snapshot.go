@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"log"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -66,8 +67,8 @@ func (o *OpLog) Delete(hkey uint64) {
 	o.m[hkey] = opDel
 }
 
-func dmapKey(name string) []byte {
-	return []byte("dmap-keys-" + name)
+func dmapKey(partID uint64, name string) []byte {
+	return []byte("dmap-keys-" + name + "-" + strconv.Itoa(int(partID)))
 }
 
 type Snapshot struct {
@@ -161,7 +162,7 @@ func (s *Snapshot) garbageCollection(gcInterval time.Duration, gcDiscardRatio fl
 	}
 }
 
-func (s *Snapshot) syncDMap(name string, oplog *OpLog) (map[uint64]uint8, error) {
+func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint64]uint8, error) {
 	oplog.Lock()
 	if len(oplog.m) == 0 {
 		oplog.Unlock()
@@ -177,7 +178,7 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) (map[uint64]uint8, error)
 
 	var hkeys map[uint64]struct{}
 	err := s.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(dmapKey(name))
+		item, err := txn.Get(dmapKey(partID, name))
 		if err == badger.ErrKeyNotFound {
 			hkeys = make(map[uint64]struct{})
 			return nil
@@ -230,7 +231,7 @@ func (s *Snapshot) syncDMap(name string, oplog *OpLog) (map[uint64]uint8, error)
 	}
 	// Encode available keys to map hkeys to dmaps on Badger.
 	data, _ := msgpack.Marshal(hkeys)
-	err = wb.Set(dmapKey(name), data, 0)
+	err = wb.Set(dmapKey(partID, name), data, 0)
 	if err != nil {
 		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
 		// Return the all hkeys to process again. We may lose all of them if this call
@@ -255,7 +256,7 @@ func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 			return
 		}
 		for name, oplog := range part {
-			failed, err := s.syncDMap(name, oplog)
+			failed, err := s.syncDMap(partID, name, oplog)
 			if err != nil {
 				s.log.Printf("[ERROR] Failed to sync DMap: %s on PartID: %d: %v", name, partID, err)
 			}

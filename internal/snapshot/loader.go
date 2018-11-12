@@ -17,7 +17,6 @@ package snapshot
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 
 	"github.com/buraksezer/olric/internal/offheap"
 	"github.com/dgraph-io/badger"
@@ -61,7 +60,6 @@ func (l *Loader) loadFromBadger(hkeys map[uint64]struct{}) (*offheap.Offheap, er
 	err = l.s.db.View(func(txn *badger.Txn) error {
 		bkey := make([]byte, 8)
 		for hkey, _ := range hkeys {
-			fmt.Println(hkey)
 			binary.BigEndian.PutUint64(bkey, hkey)
 			item, err := txn.Get(bkey)
 			if err != nil {
@@ -84,7 +82,7 @@ func (l *Loader) Next() (uint64, string, *offheap.Offheap, error) {
 		for name, _ := range dmaps {
 			var hkeys map[uint64]struct{}
 			err := l.s.db.View(func(txn *badger.Txn) error {
-				item, err := txn.Get(dmapKey(name))
+				item, err := txn.Get(dmapKey(partID, name))
 				if err != nil {
 					return err
 				}
