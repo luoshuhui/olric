@@ -278,3 +278,74 @@ func Test_Loader(t *testing.T) {
 		}
 	}
 }
+
+func Test_DestroyDMap(t *testing.T) {
+	tmpdir, snap, err := newSnapshot()
+	if err != nil {
+		t.Errorf("Expected nil. Got: %v", err)
+	}
+	defer func() {
+		err = snap.Shutdown()
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		err = os.RemoveAll(tmpdir)
+		if err != nil {
+			t.Errorf("Expected nil. Got: %v", err)
+		}
+	}()
+	oplogs := make(map[uint64]*OpLog)
+	for partID := uint64(0); partID < testPartitionCount; partID++ {
+		oh, err := offheap.New(0)
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		oplog, err := snap.RegisterDMap(PrimaryDMapKey, partID, "test", oh)
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+		oplogs[partID] = oplog
+	}
+	for hkey := uint64(0); hkey < uint64(100); hkey++ {
+		for _, oplog := range oplogs {
+			vdata := &offheap.VData{
+				Key:   strconv.Itoa(int(hkey)),
+				TTL:   1,
+				Value: []byte("value"),
+			}
+			// Store data on Olric's off-heap store.
+			err = oplog.o.Put(hkey, vdata)
+			if err != nil {
+				t.Fatalf("Expected nil. Got: %v", err)
+			}
+			// Call Put on operation log.
+			oplog.Put(hkey)
+			break
+		}
+	}
+
+	// Syncs to the disk 10 times per second, by default.
+	<-time.After(150 * time.Millisecond)
+	for partID := uint64(0); partID < testPartitionCount; partID++ {
+		err = snap.DestroyDMap(PrimaryDMapKey, partID, "test")
+		if err != nil {
+			t.Fatalf("Expected nil. Got: %v", err)
+		}
+	}
+	err = snap.db.View(func(txn *badger.Txn) error {
+		// Now check the hkeys on the disk.
+		for hkey := uint64(0); hkey < uint64(100); hkey++ {
+			k := make([]byte, 8)
+			binary.BigEndian.PutUint64(k, hkey)
+			_, err = txn.Get(k)
+			if err == badger.ErrKeyNotFound {
+				continue
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Expected nil. Got: %v", err)
+	}
+}

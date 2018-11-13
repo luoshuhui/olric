@@ -395,6 +395,36 @@ func (s *Snapshot) UnregisterDMap(dkey []byte, partID uint64, name string) error
 		delete(s.oplogs, partID)
 		s.workers[partID]()
 	}
-
 	return nil
+}
+
+func (s *Snapshot) DestroyDMap(dkey []byte, partID uint64, name string) error {
+	var hkeys map[uint64]struct{}
+	// Retrieve hkeys which belong to dmap from BadgerDB.
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(dmapKey(partID, name))
+		if err != nil {
+			return err
+		}
+		value, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		return msgpack.Unmarshal(value, &hkeys)
+	})
+	if err != nil {
+		return err
+	}
+
+	wb := s.db.NewWriteBatch()
+	defer wb.Cancel()
+	bkey := make([]byte, 8)
+	for hkey, _ := range hkeys {
+		binary.BigEndian.PutUint64(bkey, hkey)
+		err = wb.Delete(bkey)
+		if err != nil {
+			return err
+		}
+	}
+	return s.UnregisterDMap(dkey, partID, name)
 }
