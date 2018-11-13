@@ -418,13 +418,19 @@ func (s *Snapshot) DestroyDMap(dkey []byte, partID uint64, name string) error {
 
 	wb := s.db.NewWriteBatch()
 	defer wb.Cancel()
-	bkey := make([]byte, 8)
 	for hkey, _ := range hkeys {
+		// bkey is not reusable here. we cannot modify it until the Badger
+		// transaction has been committed.
+		bkey := make([]byte, 8)
 		binary.BigEndian.PutUint64(bkey, hkey)
 		err = wb.Delete(bkey)
 		if err != nil {
 			return err
 		}
+	}
+	err = wb.Flush()
+	if err != nil {
+		return err
 	}
 	return s.UnregisterDMap(dkey, partID, name)
 }
