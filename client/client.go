@@ -55,6 +55,9 @@ func New(c *Config, s olric.Serializer) (*Client, error) {
 	if s == nil {
 		s = olric.NewGobSerializer()
 	}
+	if c.MaxConn == 0 {
+		c.MaxConn = 1
+	}
 	cc := &transport.ClientConfig{
 		Addrs:       c.Addrs,
 		DialTimeout: c.DialTimeout,

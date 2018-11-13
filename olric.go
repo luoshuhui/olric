@@ -208,7 +208,7 @@ func New(c *Config) (*Olric, error) {
 	}
 	if c.OperationMode == OpInMemoryWithSnapshot {
 		snap, err := snapshot.New(c.BadgerOptions, c.SnapshotInterval,
-			c.BadgerGCInterval, c.BadgerGCDiscardRatio, c.Logger)
+			c.GCInterval, c.GCDiscardRatio, c.Logger)
 		if err != nil {
 			return nil, err
 		}

@@ -110,10 +110,10 @@ type Config struct {
 	// at the same time.
 	Logger *log.Logger
 
-	SnapshotInterval     time.Duration
-	BadgerGCInterval     time.Duration
-	BadgerGCDiscardRatio float64
-	BadgerOptions        *badger.Options
+	SnapshotInterval time.Duration
+	GCInterval       time.Duration
+	GCDiscardRatio   float64
+	BadgerOptions    *badger.Options
 
 	// MemberlistConfig is the memberlist configuration that Olric will
 	// use to do the underlying membership management and gossip. Some
