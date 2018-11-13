@@ -243,7 +243,7 @@ func Test_Loader(t *testing.T) {
 	parts := uint64(0)
 	offs := []*offheap.Offheap{}
 	for {
-		_, name, off, err := l.Next()
+		dm, err := l.Next()
 		if err == ErrLoaderDone {
 			break
 		}
@@ -251,10 +251,10 @@ func Test_Loader(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected nil. Got: %v", err)
 		}
-		if name != "test" {
-			t.Fatalf("Expected dmap name: test. Got: %s", name)
+		if dm.Name != "test" {
+			t.Fatalf("Expected dmap name: test. Got: %s", dm.Name)
 		}
-		offs = append(offs, off)
+		offs = append(offs, dm.Off)
 	}
 	if parts != testPartitionCount {
 		t.Fatalf("Expected partition count %d. Got: %d", testPartitionCount, parts)

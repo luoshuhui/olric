@@ -23,7 +23,16 @@ import (
 	"github.com/vmihailenco/msgpack"
 )
 
-var ErrLoaderDone = errors.New("loader done")
+var (
+	ErrLoaderDone = errors.New("loader done")
+	ErrFirstRun   = errors.New("first run")
+)
+
+type DMap struct {
+	PartID uint64
+	Name   string
+	Off    *offheap.Offheap
+}
 
 type Loader struct {
 	s     *Snapshot
@@ -34,6 +43,9 @@ func (s *Snapshot) NewLoader(dkey []byte) (*Loader, error) {
 	var dmaps map[uint64]map[string]struct{}
 	err := s.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(dkey)
+		if err == badger.ErrKeyNotFound {
+			return ErrFirstRun
+		}
 		if err != nil {
 			return err
 		}
@@ -77,10 +89,11 @@ func (l *Loader) loadFromBadger(hkeys map[uint64]struct{}) (*offheap.Offheap, er
 	return o, err
 }
 
-func (l *Loader) Next() (uint64, string, *offheap.Offheap, error) {
+func (l *Loader) Next() (*DMap, error) {
 	for partID, dmaps := range l.dmaps {
 		for name, _ := range dmaps {
 			var hkeys map[uint64]struct{}
+			// Retrieve hkeys which belong to dmap from BadgerDB.
 			err := l.s.db.View(func(txn *badger.Txn) error {
 				item, err := txn.Get(dmapKey(partID, name))
 				if err != nil {
@@ -92,17 +105,23 @@ func (l *Loader) Next() (uint64, string, *offheap.Offheap, error) {
 				}
 				return msgpack.Unmarshal(value, &hkeys)
 			})
+
+			// Read raw data from BadgerDB and return an offheap.Offheap
 			o, err := l.loadFromBadger(hkeys)
 			if err != nil {
-				return 0, "", nil, err
+				return nil, err
 			}
-
+			// Delete processed item.
 			delete(l.dmaps[partID], name)
 			if len(l.dmaps[partID]) == 0 {
 				delete(l.dmaps, partID)
 			}
-			return partID, name, o, nil
+			return &DMap{
+				PartID: partID,
+				Name:   name,
+				Off:    o,
+			}, nil
 		}
 	}
-	return 0, "", nil, ErrLoaderDone
+	return nil, ErrLoaderDone
 }

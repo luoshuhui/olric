@@ -60,6 +60,7 @@ func (db *Olric) exDestroyOperation(req *protocol.Message) *protocol.Message {
 
 func (db *Olric) destroyDMapOperation(req *protocol.Message) *protocol.Message {
 	for partID := uint64(0); partID < db.config.PartitionCount; partID++ {
+		// TODO: MEMORY-LEAK!!! Close offheaps properly.
 		// Delete primary copies
 		part := db.partitions[partID]
 		part.m.Delete(req.DMap)

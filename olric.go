@@ -16,6 +16,7 @@
 package olric
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -225,11 +226,8 @@ func New(c *Config) (*Olric, error) {
 			backup: true,
 		}
 	}
-	if c.OperationMode == OpInMemoryWithSnapshot {
-		// db.loadSnapshot
-	}
-	db.registerOperations()
 
+	db.registerOperations()
 	db.wg.Add(1)
 	go db.updateCurrentUnixNano()
 	return db, nil
@@ -267,8 +265,74 @@ func (db *Olric) startDiscovery() error {
 	return nil
 }
 
+func (db *Olric) restoreDMap(dkey []byte, part *partition, name string, off *offheap.Offheap) error {
+	// Don't use Mutex for this because only partition owners list needs this.
+	tmp := &dmap{
+		locker: newLocker(),
+		oh:     off,
+	}
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		r, err := db.snapshot.RegisterDMap(dkey, part.id, name, off)
+		if err != nil {
+			return err
+		}
+		tmp.oplog = r
+	}
+	part.m.LoadOrStore(name, tmp)
+	atomic.AddInt32(&part.count, 1)
+	return nil
+}
+
+func (db *Olric) restoreFromSnapshot(dkey []byte) error {
+	l, err := db.snapshot.NewLoader(dkey)
+	if err == snapshot.ErrFirstRun {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if bytes.Equal(dkey, snapshot.PrimaryDMapKey) {
+		db.log.Printf("[INFO] Reloading primary copies from BadgerDB")
+	} else {
+		db.log.Printf("[INFO] Reloading backup copies from BadgerDB")
+	}
+	var part *partition
+	for {
+		dm, err := l.Next()
+		if err == snapshot.ErrLoaderDone {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(dkey, snapshot.PrimaryDMapKey) {
+			part = db.partitions[dm.PartID]
+		} else {
+			part = db.backups[dm.PartID]
+		}
+		err = db.restoreDMap(dkey, part, dm.Name, dm.Off)
+		if err != nil {
+			return err
+		}
+		db.log.Printf("[DEBUG] Reloaded DMap %s on PartID: %d", dm.Name, dm.PartID)
+	}
+	return nil
+}
+
 // Start starts background servers and joins the cluster.
 func (db *Olric) Start() error {
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		err := db.restoreFromSnapshot(snapshot.PrimaryDMapKey)
+		if err != nil {
+			return err
+		}
+		err = db.restoreFromSnapshot(snapshot.BackupDMapKey)
+		if err != nil {
+			return err
+		}
+	}
+
 	errCh := make(chan error, 1)
 	db.wg.Add(1)
 	go func() {
