@@ -66,7 +66,7 @@ func (db *Olric) moveDMap(part *partition, name string, dm *dmap, owner host, wg
 		}
 	}
 
-	payload, err := dm.oh.Export()
+	payload, err := dm.off.Export()
 	if err != nil {
 		db.log.Printf("[ERROR] Failed to call Export on dmap. partID: %d, name: %s, error: %v", part.id, name, err)
 		return
@@ -98,7 +98,7 @@ func (db *Olric) moveDMap(part *partition, name string, dm *dmap, owner host, wg
 
 	// Delete moved dmap object. the gc will free the allocated memory.
 	part.m.Delete(name)
-	err = dm.oh.Close()
+	err = dm.off.Close()
 	if err != nil {
 		db.log.Printf("[ERROR] Failed to close offheap instance. partID: %d, name: %s, error: %v", data.PartID, data.Name, err)
 	}
@@ -113,7 +113,7 @@ func (db *Olric) mergeDMaps(part *partition, data *dmapbox) error {
 
 	tmp, ok := part.m.Load(data.Name)
 	if !ok {
-		dm := &dmap{oh: oh}
+		dm := &dmap{off: oh}
 		if !part.backup {
 			// Create this on the owners, not backups.
 			dm.locker = newLocker()
@@ -128,8 +128,8 @@ func (db *Olric) mergeDMaps(part *partition, data *dmapbox) error {
 
 	var merr error
 	oh.Range(func(hkey uint64, vdata *offheap.VData) bool {
-		if !dm.oh.Check(hkey) {
-			merr = dm.oh.Put(hkey, vdata)
+		if !dm.off.Check(hkey) {
+			merr = dm.off.Put(hkey, vdata)
 			if merr != nil {
 				return false
 			}

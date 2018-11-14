@@ -813,7 +813,7 @@ func TestDMap_TTLEviction(t *testing.T) {
 			part := ins.partitions[partID]
 			part.m.Range(func(k, v interface{}) bool {
 				dm := v.(*dmap)
-				length += dm.oh.Len()
+				length += dm.off.Len()
 				return true
 			})
 		}
@@ -947,7 +947,7 @@ func TestDMap_PutPurgeOldVersions(t *testing.T) {
 				dm := tmp.(*dmap)
 				key := bkey(i)
 				hkey := db1.getHKey("mymap", key)
-				value, err := dm.oh.Get(hkey)
+				value, err := dm.off.Get(hkey)
 				// Some keys are owned by the second node.
 				if err == offheap.ErrKeyNotFound {
 					continue

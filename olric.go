@@ -82,18 +82,12 @@ type Olric struct {
 	bcancel context.CancelFunc
 }
 
-type vdata struct {
-	Key   string
-	TTL   int64
-	Value []byte
-}
-
 type dmap struct {
 	sync.Mutex
 
 	locker *locker
 	oplog  *snapshot.OpLog
-	oh     *offheap.Offheap
+	off    *offheap.Offheap
 }
 
 type partition struct {
@@ -267,18 +261,16 @@ func (db *Olric) startDiscovery() error {
 
 func (db *Olric) restoreDMap(dkey []byte, part *partition, name string, off *offheap.Offheap) error {
 	// Don't use Mutex for this because only partition owners list needs this.
-	tmp := &dmap{
+	oplog, err := db.snapshot.RegisterDMap(dkey, part.id, name, off)
+	if err != nil {
+		return err
+	}
+	dm := &dmap{
 		locker: newLocker(),
-		oh:     off,
+		off:    off,
+		oplog:  oplog,
 	}
-	if db.config.OperationMode == OpInMemoryWithSnapshot {
-		r, err := db.snapshot.RegisterDMap(dkey, part.id, name, off)
-		if err != nil {
-			return err
-		}
-		tmp.oplog = r
-	}
-	part.m.LoadOrStore(name, tmp)
+	part.m.Store(name, dm)
 	atomic.AddInt32(&part.count, 1)
 	return nil
 }
@@ -430,7 +422,7 @@ func (db *Olric) Shutdown(ctx context.Context) error {
 	purgeDMaps := func(part *partition) {
 		part.m.Range(func(name, dm interface{}) bool {
 			d := dm.(*dmap)
-			err := d.oh.Close()
+			err := d.off.Close()
 			if err != nil {
 				db.log.Printf("[ERROR] Failed to close offheap instance: %s on PartID: %d: %v", name, part.id, err)
 				result = multierror.Append(result, err)
@@ -511,30 +503,47 @@ func (db *Olric) locateKey(name, key string) (host, uint64, error) {
 	return member, hkey, nil
 }
 
+func (db *Olric) createDMap(part *partition, name string) (*dmap, error) {
+	// We need to protect snapshot.RegisterDMap and offheap.New
+	part.Lock()
+	defer part.Unlock()
+
+	// Try to load one more time. Another goroutine may have created the dmap.
+	dm, ok := part.m.Load(name)
+	if ok {
+		return dm.(*dmap), nil
+	}
+	off, err := offheap.New(0)
+	if err != nil {
+		return nil, err
+	}
+	fresh := &dmap{
+		locker: newLocker(),
+		off:    off,
+	}
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		dkey := snapshot.PrimaryDMapKey
+		if part.backup {
+			dkey = snapshot.BackupDMapKey
+		}
+		oplog, err := db.snapshot.RegisterDMap(dkey, part.id, name, off)
+		if err != nil {
+			return nil, err
+		}
+		fresh.oplog = oplog
+	}
+	part.m.Store(name, fresh)
+	atomic.AddInt32(&part.count, 1)
+	return fresh, nil
+}
+
 func (db *Olric) getDMap(name string, hkey uint64) (*dmap, error) {
 	part := db.getPartition(hkey)
 	dm, ok := part.m.Load(name)
 	if ok {
 		return dm.(*dmap), nil
 	}
-	oh, err := offheap.New(0)
-	if err != nil {
-		return nil, err
-	}
-	tmp := &dmap{
-		locker: newLocker(),
-		oh:     oh,
-	}
-	if db.config.OperationMode == OpInMemoryWithSnapshot {
-		r, err := db.snapshot.RegisterDMap(snapshot.PrimaryDMapKey, part.id, name, oh)
-		if err != nil {
-			return nil, err
-		}
-		tmp.oplog = r
-	}
-	res, _ := part.m.LoadOrStore(name, tmp)
-	atomic.AddInt32(&part.count, 1)
-	return res.(*dmap), nil
+	return db.createDMap(part, name)
 }
 
 func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
@@ -543,24 +552,7 @@ func (db *Olric) getBackupDMap(name string, hkey uint64) (*dmap, error) {
 	if ok {
 		return dm.(*dmap), nil
 	}
-	oh, err := offheap.New(0)
-	if err != nil {
-		return nil, err
-	}
-	tmp := &dmap{
-		locker: newLocker(),
-		oh:     oh,
-	}
-	if db.config.OperationMode == OpInMemoryWithSnapshot {
-		r, err := db.snapshot.RegisterDMap(snapshot.BackupDMapKey, part.id, name, oh)
-		if err != nil {
-			return nil, err
-		}
-		tmp.oplog = r
-	}
-	res, _ := part.m.LoadOrStore(name, tmp)
-	atomic.AddInt32(&part.count, 1)
-	return res.(*dmap), nil
+	return db.createDMap(part, name)
 }
 
 // hostCmp returns true if o1 and o2 is the same.

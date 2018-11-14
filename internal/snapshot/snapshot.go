@@ -49,8 +49,8 @@ type onDiskDMaps map[uint64]map[string]struct{}
 type OpLog struct {
 	sync.Mutex
 
-	m map[uint64]uint8
-	o *offheap.Offheap
+	m   map[uint64]uint8
+	off *offheap.Offheap
 }
 
 func (o *OpLog) Put(hkey uint64) {
@@ -169,12 +169,13 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 		return nil, nil
 	}
 	// Work on this temporary copy to get rid of disk overhead.
-	tmp := make(map[uint64]uint8)
+	wcopy := make(map[uint64]uint8)
 	for hkey, op := range oplog.m {
-		tmp[hkey] = op
+		wcopy[hkey] = op
 		delete(oplog.m, hkey)
 	}
 	oplog.Unlock()
+	s.log.Printf("[DEBUG] Running syncDMap on %s PartID: %d", name, partID)
 
 	var hkeys map[uint64]struct{}
 	err := s.db.View(func(txn *badger.Txn) error {
@@ -199,11 +200,11 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 	failed := make(map[uint64]uint8)
 	wb := s.db.NewWriteBatch()
 	defer wb.Cancel()
-	for hkey, op := range tmp {
+	for hkey, op := range wcopy {
 		bkey := make([]byte, 8)
 		binary.BigEndian.PutUint64(bkey, hkey)
 		if op == opPut {
-			val, err := oplog.o.GetRaw(hkey)
+			val, err := oplog.off.GetRaw(hkey)
 			if err == offheap.ErrKeyNotFound {
 				continue
 			}
@@ -236,7 +237,7 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
 		// Return the all hkeys to process again. We may lose all of them if this call
 		// doesn't work.
-		return tmp, wb.Flush()
+		return wcopy, wb.Flush()
 	}
 	// Failed keys will be processed again by the next call.
 	return failed, wb.Flush()
@@ -244,7 +245,6 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 
 func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 	defer s.wg.Done()
-
 	sync := func() {
 		// sync the dmaps to badger.
 		s.mu.RLock()
@@ -325,7 +325,7 @@ func (s *Snapshot) registerOnBadger(dkey []byte, partID uint64, name string) err
 	})
 }
 
-func (s *Snapshot) RegisterDMap(dkey []byte, partID uint64, name string, o *offheap.Offheap) (*OpLog, error) {
+func (s *Snapshot) RegisterDMap(dkey []byte, partID uint64, name string, off *offheap.Offheap) (*OpLog, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -337,8 +337,8 @@ func (s *Snapshot) RegisterDMap(dkey []byte, partID uint64, name string, o *offh
 		s.oplogs[partID] = make(map[string]*OpLog)
 	}
 	oplog := &OpLog{
-		m: make(map[uint64]uint8),
-		o: o,
+		m:   make(map[uint64]uint8),
+		off: off,
 	}
 	s.oplogs[partID][name] = oplog
 

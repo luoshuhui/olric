@@ -83,7 +83,7 @@ func (db *Olric) putKeyVal(hkey uint64, name, key string, value []byte, timeout 
 		TTL:   ttl,
 		Value: value,
 	}
-	err = dm.oh.Put(hkey, val)
+	err = dm.off.Put(hkey, val)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (db *Olric) putBackupOperation(req *protocol.Message) *protocol.Message {
 		Value: req.Value,
 	}
 
-	err = dm.oh.Put(hkey, vdata)
+	err = dm.off.Put(hkey, vdata)
 	if err != nil {
 		return req.Error(protocol.StatusInternalServerError, err)
 	}

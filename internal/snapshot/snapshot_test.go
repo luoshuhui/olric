@@ -78,7 +78,7 @@ func Test_Put(t *testing.T) {
 				Value: []byte("value"),
 			}
 			// Store data on Olric's off-heap store.
-			err = oplog.o.Put(hkey, vdata)
+			err = oplog.off.Put(hkey, vdata)
 			if err != nil {
 				t.Fatalf("Expected nil. Got: %v", err)
 			}
@@ -145,7 +145,7 @@ func Test_Delete(t *testing.T) {
 				Value: []byte("value"),
 			}
 			// Store data on Olric's off-heap store.
-			err = oplog.o.Put(hkey, vdata)
+			err = oplog.off.Put(hkey, vdata)
 			if err != nil {
 				t.Fatalf("Expected nil. Got: %v", err)
 			}
@@ -223,7 +223,7 @@ func Test_Loader(t *testing.T) {
 				Value: []byte("value"),
 			}
 			// Store data on Olric's off-heap store.
-			err = oplog.o.Put(hkey, vdata)
+			err = oplog.off.Put(hkey, vdata)
 			if err != nil {
 				t.Fatalf("Expected nil. Got: %v", err)
 			}
@@ -314,7 +314,7 @@ func Test_DestroyDMap(t *testing.T) {
 				Value: []byte("value"),
 			}
 			// Store data on Olric's off-heap store.
-			err = oplog.o.Put(hkey, vdata)
+			err = oplog.off.Put(hkey, vdata)
 			if err != nil {
 				t.Fatalf("Expected nil. Got: %v", err)
 			}

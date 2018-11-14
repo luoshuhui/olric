@@ -71,7 +71,7 @@ func (db *Olric) scanDMapForEviction(partID uint64, name string, dm *dmap, wg *s
 	var maxKcount = 20
 	janitor := func() bool {
 		dcount, kcount := 0, 0
-		dm.oh.Range(func(hkey uint64, vdata *offheap.VData) bool {
+		dm.off.Range(func(hkey uint64, vdata *offheap.VData) bool {
 			kcount++
 			if kcount >= maxKcount {
 				return false
