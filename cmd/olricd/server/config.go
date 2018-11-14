@@ -43,7 +43,7 @@ type olricd struct {
 
 type snapshot struct {
 	Enabled        bool    `toml:"enabled"`
-	Interval       string  `toml:"internal"`
+	Interval       string  `toml:"interval"`
 	Dir            string  `toml:"dir"`
 	GCInterval     string  `toml:"gcInterval"`
 	GCDiscardRatio float64 `toml:"gcDiscardRatio"`

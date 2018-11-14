@@ -89,7 +89,7 @@ func New(c *Config) (*Olricd, error) {
 		keepAlivePeriod, err = time.ParseDuration(c.Olricd.KeepAlivePeriod)
 		if err != nil {
 			return nil, errors.WithMessage(err,
-				fmt.Sprintf("failed to parse KeepAlivePeriod: '%s'", c.Olricd.KeepAlivePeriod))
+				fmt.Sprintf("failed to parse olricd.keepAlivePeriod: '%s'", c.Olricd.KeepAlivePeriod))
 		}
 	}
 	s.config = &olric.Config{

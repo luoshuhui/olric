@@ -284,11 +284,6 @@ func (db *Olric) restoreFromSnapshot(dkey []byte) error {
 		return err
 	}
 
-	if bytes.Equal(dkey, snapshot.PrimaryDMapKey) {
-		db.log.Printf("[INFO] Reloading primary copies from BadgerDB")
-	} else {
-		db.log.Printf("[INFO] Reloading backup copies from BadgerDB")
-	}
 	var part *partition
 	for {
 		dm, err := l.Next()
@@ -307,7 +302,7 @@ func (db *Olric) restoreFromSnapshot(dkey []byte) error {
 		if err != nil {
 			return err
 		}
-		db.log.Printf("[DEBUG] Reloaded DMap %s on PartID: %d", dm.Name, dm.PartID)
+		db.log.Printf("[DEBUG] Reloaded DMap %s on PartID(backup: %t): %d", dm.Name, part.backup, dm.PartID)
 	}
 	return nil
 }
@@ -315,6 +310,8 @@ func (db *Olric) restoreFromSnapshot(dkey []byte) error {
 // Start starts background servers and joins the cluster.
 func (db *Olric) Start() error {
 	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		now := time.Now()
+		db.log.Printf("[INFO] Reloading data from the snapshot. This may take a while.")
 		err := db.restoreFromSnapshot(snapshot.PrimaryDMapKey)
 		if err != nil {
 			return err
@@ -323,6 +320,7 @@ func (db *Olric) Start() error {
 		if err != nil {
 			return err
 		}
+		db.log.Printf("[INFO] Reloading data from the snapshot took %v", time.Since(now))
 	}
 
 	errCh := make(chan error, 1)
