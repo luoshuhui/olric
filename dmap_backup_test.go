@@ -256,18 +256,18 @@ func TestDMap_PruneStaleBackups(t *testing.T) {
 		}
 	}
 	peers = append(peers, db2.discovery.localNode().Address())
-	r3, err := newOlric(peers)
+	db3, err := newOlric(peers)
 	if err != nil {
 		t.Fatalf("Expected nil. Got: %v", err)
 	}
 	defer func() {
-		err = r3.Shutdown(context.Background())
+		err = db3.Shutdown(context.Background())
 		if err != nil {
-			r3.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
+			db3.log.Printf("[ERROR] Failed to shutdown Olric: %v", err)
 		}
 	}()
 
-	peers = append(peers, r3.discovery.localNode().Address())
+	peers = append(peers, db3.discovery.localNode().Address())
 	r4, err := newOlric(peers)
 	if err != nil {
 		t.Fatalf("Expected nil. Got: %v", err)

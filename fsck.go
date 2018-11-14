@@ -20,6 +20,7 @@ import (
 
 	"github.com/buraksezer/olric/internal/offheap"
 	"github.com/buraksezer/olric/internal/protocol"
+	"github.com/buraksezer/olric/internal/snapshot"
 	"github.com/vmihailenco/msgpack"
 )
 
@@ -101,6 +102,17 @@ func (db *Olric) moveDMap(part *partition, name string, dm *dmap, owner host, wg
 	err = dm.off.Close()
 	if err != nil {
 		db.log.Printf("[ERROR] Failed to close offheap instance. partID: %d, name: %s, error: %v", data.PartID, data.Name, err)
+	}
+	dkey := snapshot.PrimaryDMapKey
+	if part.backup {
+		dkey = snapshot.BackupDMapKey
+	}
+	err = db.snapshot.DestroyDMap(dkey, part.id, name)
+	if err != nil {
+		db.log.Printf(
+			"[ERROR] Failed to destroy moved DMap instance on BadgerDB. PartID(backup: %t): %d, name: %s, error: %v",
+			part.backup, data.PartID, data.Name, err,
+		)
 	}
 	atomic.AddInt32(&part.count, -1)
 }
