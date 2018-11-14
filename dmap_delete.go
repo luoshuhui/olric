@@ -154,26 +154,6 @@ func (db *Olric) exDeleteOperation(req *protocol.Message) *protocol.Message {
 	return req.Success()
 }
 
-func (db *Olric) deleteBackupOperation(req *protocol.Message) *protocol.Message {
-	// TODO: We may need to check backup ownership
-	hkey := db.getHKey(req.DMap, req.Key)
-	dm, err := db.getBackupDMap(req.DMap, hkey)
-	if err != nil {
-		return req.Error(protocol.StatusInternalServerError, err)
-	}
-	dm.Lock()
-	defer dm.Unlock()
-
-	err = dm.off.Delete(hkey)
-	if err != nil {
-		return req.Error(protocol.StatusInternalServerError, err)
-	}
-	if db.config.OperationMode == OpInMemoryWithSnapshot {
-		dm.oplog.Delete(hkey)
-	}
-	return req.Success()
-}
-
 func (db *Olric) deletePrevOperation(req *protocol.Message) *protocol.Message {
 	hkey := db.getHKey(req.DMap, req.Key)
 	dm, err := db.getDMap(req.DMap, hkey)
@@ -188,6 +168,26 @@ func (db *Olric) deletePrevOperation(req *protocol.Message) *protocol.Message {
 		return req.Error(protocol.StatusInternalServerError, err)
 	}
 
+	if db.config.OperationMode == OpInMemoryWithSnapshot {
+		dm.oplog.Delete(hkey)
+	}
+	return req.Success()
+}
+
+func (db *Olric) deleteBackupOperation(req *protocol.Message) *protocol.Message {
+	// TODO: We may need to check backup ownership
+	hkey := db.getHKey(req.DMap, req.Key)
+	dm, err := db.getBackupDMap(req.DMap, hkey)
+	if err != nil {
+		return req.Error(protocol.StatusInternalServerError, err)
+	}
+	dm.Lock()
+	defer dm.Unlock()
+
+	err = dm.off.Delete(hkey)
+	if err != nil {
+		return req.Error(protocol.StatusInternalServerError, err)
+	}
 	if db.config.OperationMode == OpInMemoryWithSnapshot {
 		dm.oplog.Delete(hkey)
 	}

@@ -175,7 +175,7 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 		delete(oplog.m, hkey)
 	}
 	oplog.Unlock()
-	s.log.Printf("[DEBUG] Running syncDMap on %s PartID: %d", name, partID)
+	s.log.Printf("[DEBUG] DMap: %s on PartID: %d have been synchronizing to BadgerDB", name, partID)
 
 	var hkeys map[uint64]struct{}
 	err := s.db.View(func(txn *badger.Txn) error {
@@ -277,6 +277,7 @@ func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 		select {
 		case <-s.ctx.Done():
 			// Olric instance has been closing. Call sync one last time.
+			s.log.Printf("[DEBUG] DMaps on PartID: %d have been synchronizing to BadgerDB for last time.", partID)
 			sync()
 			return
 		case <-ctx.Done():
