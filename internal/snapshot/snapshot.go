@@ -118,7 +118,6 @@ func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
 		snapshotInterval = defaultSnapshotInterval
 	}
 
-	opt.ValueLogFileSize = 20971520
 	db, err := badger.Open(*opt)
 	if err != nil {
 		return nil, err
@@ -288,19 +287,20 @@ func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 			// Re-add failed hkeys to OpLog for later processing.
 			// It can be pretty critical for our business. We may
 			// lose data at that point.
-			if len(failed) != 0 {
-				oplog.Lock()
-				for hkey, op := range failed {
-					_, ok := oplog.m[hkey]
-					// If ok is true, the hkey is already updated or deleted by the user.
-					// So it will be processed again by the next call.
-					if !ok {
-						// Add it again to process in the next call.
-						oplog.m[hkey] = op
-					}
-				}
-				oplog.Unlock()
+			if len(failed) == 0 {
+				continue
 			}
+			oplog.Lock()
+			for hkey, op := range failed {
+				_, ok := oplog.m[hkey]
+				// If ok is true, the hkey is already updated or deleted by the user.
+				// So it will be processed again by the next call.
+				if !ok {
+					// Add it again to process in the next call.
+					oplog.m[hkey] = op
+				}
+			}
+			oplog.Unlock()
 		}
 	}
 	for {
