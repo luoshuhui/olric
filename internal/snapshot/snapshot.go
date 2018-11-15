@@ -40,12 +40,16 @@ const (
 )
 
 var (
+	// PrimaryDMapKey is the key on Badger for registered DMap names on partitions.
 	PrimaryDMapKey = []byte("primary-dmap-key")
-	BackupDMapKey  = []byte("backup-dmap-key")
+
+	// BackupDMapKey is the key on Badger for registered DMap names on backups.
+	BackupDMapKey = []byte("backup-dmap-key")
 )
 
 type onDiskDMaps map[uint64]map[string]struct{}
 
+// OpLog defines operation log.
 type OpLog struct {
 	sync.Mutex
 
@@ -53,6 +57,7 @@ type OpLog struct {
 	off *offheap.Offheap
 }
 
+// Put logs 'Put' operation for given hkey.
 func (o *OpLog) Put(hkey uint64) {
 	o.Lock()
 	defer o.Unlock()
@@ -60,6 +65,7 @@ func (o *OpLog) Put(hkey uint64) {
 	o.m[hkey] = opPut
 }
 
+// Delete logs 'Delete' operation for given hkey.
 func (o *OpLog) Delete(hkey uint64) {
 	o.Lock()
 	defer o.Unlock()
@@ -71,6 +77,7 @@ func dmapKey(partID uint64, name string) []byte {
 	return []byte("dmap-keys-" + name + "-" + strconv.Itoa(int(partID)))
 }
 
+// Snapshot implements a low-latency snapshot engine with BadgerDB.
 type Snapshot struct {
 	mu sync.RWMutex
 
@@ -84,6 +91,7 @@ type Snapshot struct {
 	cancel           context.CancelFunc
 }
 
+// New creates and returns a new Snapshot.
 func New(opt *badger.Options, snapshotInterval, gcInterval time.Duration,
 	gcDiscardRatio float64, logger *log.Logger) (*Snapshot, error) {
 	if opt == nil {
@@ -168,7 +176,7 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 		oplog.Unlock()
 		return nil, nil
 	}
-	// Work on this temporary copy to get rid of disk overhead.
+	// Work on this temporary copy to prevent locking DMap during sync.
 	wcopy := make(map[uint64]uint8)
 	for hkey, op := range oplog.m {
 		wcopy[hkey] = op
@@ -177,6 +185,7 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 	oplog.Unlock()
 	s.log.Printf("[DEBUG] DMap: %s on PartID: %d have been synchronizing to BadgerDB", name, partID)
 
+	// Get all the hkeys for this DMap. We need the hkeys slice to restore DMaps at startup.
 	var hkeys map[uint64]struct{}
 	err := s.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(dmapKey(partID, name))
@@ -197,10 +206,15 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 		return nil, err
 	}
 
-	failed := make(map[uint64]uint8)
 	wb := s.db.NewWriteBatch()
 	defer wb.Cancel()
+
+	// Save failed hkeys to process them again later.
+	failed := make(map[uint64]uint8)
 	for hkey, op := range wcopy {
+		// We need to create a bkey for every hkey because it shouldn't be modified
+		// until the underlying transaction is being committed. Otherwise our hkeys
+		// in the BadgerDB will be inconsistent.
 		bkey := make([]byte, 8)
 		binary.BigEndian.PutUint64(bkey, hkey)
 		if op == opPut {
@@ -219,6 +233,7 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 				failed[hkey] = op
 				continue
 			}
+			// We have the key.
 			hkeys[hkey] = struct{}{}
 		} else {
 			err = wb.Delete(bkey)
@@ -227,11 +242,17 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 				failed[hkey] = op
 				continue
 			}
+			// Delete the hkey from hkeys list.
 			delete(hkeys, hkey)
 		}
 	}
 	// Encode available keys to map hkeys to dmaps on Badger.
-	data, _ := msgpack.Marshal(hkeys)
+	data, err := msgpack.Marshal(hkeys)
+	if err != nil {
+		s.log.Printf("[ERROR] Failed to marshal dmap-keys for %s: %v", name, err)
+		return wcopy, wb.Flush()
+	}
+
 	err = wb.Set(dmapKey(partID, name), data, 0)
 	if err != nil {
 		s.log.Printf("[ERROR] Failed to set dmap-keys for %s: %v", name, err)
@@ -243,8 +264,12 @@ func (s *Snapshot) syncDMap(partID uint64, name string, oplog *OpLog) (map[uint6
 	return failed, wb.Flush()
 }
 
+// worker runs at background for every partition which has dmaps.
 func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 	defer s.wg.Done()
+
+	// Iterates over partitions dmaps and calls syncDMap to synchronize DMaps
+	// to BadgerDB.
 	sync := func() {
 		// sync the dmaps to badger.
 		s.mu.RLock()
@@ -260,10 +285,15 @@ func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 			if err != nil {
 				s.log.Printf("[ERROR] Failed to sync DMap: %s on PartID: %d: %v", name, partID, err)
 			}
+			// Re-add failed hkeys to OpLog for later processing.
+			// It can be pretty critical for our business. We may
+			// lose data at that point.
 			if len(failed) != 0 {
 				oplog.Lock()
 				for hkey, op := range failed {
 					_, ok := oplog.m[hkey]
+					// If ok is true, the hkey is already updated or deleted by the user.
+					// So it will be processed again by the next call.
 					if !ok {
 						// Add it again to process in the next call.
 						oplog.m[hkey] = op
@@ -284,6 +314,7 @@ func (s *Snapshot) worker(ctx context.Context, partID uint64) {
 			// Partition is empty.
 			return
 		case <-time.After(s.snapshotInterval):
+			// Sync DMaps to BadgerDB periodically.
 			sync()
 		}
 	}
@@ -297,11 +328,9 @@ func (s *Snapshot) registerOnBadger(dkey []byte, partID uint64, name string) err
 			// Something went wrong.
 			return err
 		}
-
 		if err == badger.ErrKeyNotFound {
 			// Key not found.
 			value = make(onDiskDMaps)
-			err = nil
 		} else {
 			// err == nil
 			valCopy, err := item.ValueCopy(nil)
@@ -326,6 +355,7 @@ func (s *Snapshot) registerOnBadger(dkey []byte, partID uint64, name string) err
 	})
 }
 
+// RegisterDMap registers given DMap to the snapshot instance, creates a new worker for its partition if needed and returns an OpLog.
 func (s *Snapshot) RegisterDMap(dkey []byte, partID uint64, name string, off *offheap.Offheap) (*OpLog, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -344,6 +374,8 @@ func (s *Snapshot) RegisterDMap(dkey []byte, partID uint64, name string, off *of
 	s.oplogs[partID][name] = oplog
 
 	if _, ok := s.workers[partID]; !ok {
+		// Create a worker goroutine for this partition. It will call its sync function peridically
+		// to sync dmaps to BadgerDB.
 		ctx, cancel := context.WithCancel(context.Background())
 		s.workers[partID] = cancel
 		s.wg.Add(1)
@@ -380,6 +412,7 @@ func (s *Snapshot) unregisterOnBadger(dkey []byte, partID uint64, name string) e
 	})
 }
 
+// UnregisterDMap unregisters a dmap from synchronization list.
 func (s *Snapshot) UnregisterDMap(dkey []byte, partID uint64, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -394,11 +427,13 @@ func (s *Snapshot) UnregisterDMap(dkey []byte, partID uint64, name string) error
 	delete(dmaps, name)
 	if len(dmaps) == 0 {
 		delete(s.oplogs, partID)
+		// No more data on the partition. Stop the sync worker.
 		s.workers[partID]()
 	}
 	return nil
 }
 
+// DestroyDMap destroys a dmap's hkeys and releated data on the snapshot.
 func (s *Snapshot) DestroyDMap(dkey []byte, partID uint64, name string) error {
 	var hkeys map[uint64]struct{}
 	// Retrieve hkeys which belong to dmap from BadgerDB.
@@ -419,7 +454,7 @@ func (s *Snapshot) DestroyDMap(dkey []byte, partID uint64, name string) error {
 
 	wb := s.db.NewWriteBatch()
 	defer wb.Cancel()
-	for hkey, _ := range hkeys {
+	for hkey := range hkeys {
 		// bkey is not reusable here. we cannot modify it until the Badger
 		// transaction has been committed.
 		bkey := make([]byte, 8)

@@ -164,6 +164,8 @@ func (o *Offheap) Put(hkey uint64, value *VData) error {
 	}
 }
 
+// GetRaw extracts un-decoded value for the given hkey. This is useful for merging tables or
+// snapshots.
 func (o *Offheap) GetRaw(hkey uint64) ([]byte, error) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -371,6 +373,7 @@ func (o *Offheap) Range(f func(hkey uint64, vdata *VData) bool) {
 	}
 }
 
+// DecodeRaw creates VData for given byte slice. It assumes that the given data is valid. Never returns an error.
 func DecodeRaw(raw []byte) *VData {
 	offset := 0
 	vdata := &VData{}

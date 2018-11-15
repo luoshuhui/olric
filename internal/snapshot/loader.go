@@ -24,21 +24,27 @@ import (
 )
 
 var (
+	//ErrLoaderDone indicates that no more value left in the snapshot to restore.
 	ErrLoaderDone = errors.New("loader done")
-	ErrFirstRun   = errors.New("first run")
+
+	// ErrFirstRun indicates that there is no key in the snapshot to restore. Run for the first time.
+	ErrFirstRun = errors.New("first run")
 )
 
+// DMap represents a DMap object which's restored from snapshot.
 type DMap struct {
 	PartID uint64
 	Name   string
 	Off    *offheap.Offheap
 }
 
+// Loader implements an iterator like mechanism to restore dmaps from snapshot.
 type Loader struct {
 	s     *Snapshot
 	dmaps map[uint64]map[string]struct{}
 }
 
+// NewLoader creates and returns a new Loader.
 func (s *Snapshot) NewLoader(dkey []byte) (*Loader, error) {
 	var dmaps map[uint64]map[string]struct{}
 	err := s.db.View(func(txn *badger.Txn) error {
@@ -65,13 +71,13 @@ func (s *Snapshot) NewLoader(dkey []byte) (*Loader, error) {
 }
 
 func (l *Loader) loadFromBadger(hkeys map[uint64]struct{}) (*offheap.Offheap, error) {
-	o, err := offheap.New(1 << 20)
+	o, err := offheap.New(0)
 	if err != nil {
 		return nil, err
 	}
 	err = l.s.db.View(func(txn *badger.Txn) error {
 		bkey := make([]byte, 8)
-		for hkey, _ := range hkeys {
+		for hkey := range hkeys {
 			binary.BigEndian.PutUint64(bkey, hkey)
 			item, err := txn.Get(bkey)
 			if err != nil {
@@ -89,9 +95,11 @@ func (l *Loader) loadFromBadger(hkeys map[uint64]struct{}) (*offheap.Offheap, er
 	return o, err
 }
 
+// Next creates and returns a new DMap from snapshot. It returns ErrLoaderDone when all the DMaps
+// are restored from the snapshot.
 func (l *Loader) Next() (*DMap, error) {
 	for partID, dmaps := range l.dmaps {
-		for name, _ := range dmaps {
+		for name := range dmaps {
 			var hkeys map[uint64]struct{}
 			// Retrieve hkeys which belong to dmap from BadgerDB.
 			err := l.s.db.View(func(txn *badger.Txn) error {
@@ -105,6 +113,9 @@ func (l *Loader) Next() (*DMap, error) {
 				}
 				return msgpack.Unmarshal(value, &hkeys)
 			})
+			if err != nil {
+				return nil, err
+			}
 
 			// Read raw data from BadgerDB and return an offheap.Offheap
 			o, err := l.loadFromBadger(hkeys)

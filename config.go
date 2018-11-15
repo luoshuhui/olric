@@ -46,10 +46,16 @@ const (
 	DefaultLogLevel = "DEBUG"
 )
 
+// OpMode is the type for operation modes.
 type OpMode uint8
 
 const (
+	// OpInMemory indicates pure in-memory operation mode. In-memory data structures
+	// are not durable at that mode.
 	OpInMemory OpMode = OpMode(iota)
+
+	// OpInMemoryWithSnapshot indicates in-memory operation mode with snapshot support.
+	// The in-memory data is durable at that mode.
 	OpInMemoryWithSnapshot
 )
 

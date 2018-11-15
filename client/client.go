@@ -75,6 +75,7 @@ func (c *Client) Close() {
 	c.client.Close()
 }
 
+// NewDMap creates and returns a new DMap object to access DMaps on the cluster.
 func (c *Client) NewDMap(name string) *DMap {
 	return &DMap{
 		Client: c,
